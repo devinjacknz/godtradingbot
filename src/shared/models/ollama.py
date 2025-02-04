@@ -25,22 +25,40 @@ class OllamaModel:
         self.latency = Histogram(
             "ollama_request_duration_seconds",
             "Time spent processing Ollama requests",
-            ["model_name", "status"]
+            ["model_name", "status", "operation"],
+            buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
         )
         self.tokens_processed = Counter(
             "ollama_tokens_total",
             "Total number of tokens processed",
-            ["model_name", "type"]
+            ["model_name", "type", "status"]
         )
         self.requests = Counter(
             "ollama_requests_total",
             "Total number of requests made to Ollama",
-            ["model_name", "status"]
+            ["model_name", "status", "operation"]
         )
         self.memory_usage = Gauge(
             "ollama_memory_bytes",
             "Estimated memory usage by model",
-            ["model_name"]
+            ["model_name", "type"]
+        )
+        self.response_length = Histogram(
+            "ollama_response_length_chars",
+            "Length of model responses in characters",
+            ["model_name", "status"],
+            buckets=[50, 100, 250, 500, 1000, 2500, 5000]
+        )
+        self.queue_time = Histogram(
+            "ollama_queue_time_seconds",
+            "Time spent waiting in queue before processing",
+            ["model_name"],
+            buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
+        )
+        self.errors = Counter(
+            "ollama_errors_total",
+            "Total number of errors by type",
+            ["model_name", "error_type"]
         )
 
     def _validate_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
@@ -101,21 +119,55 @@ class OllamaModel:
                     validated_response = self._validate_response(result)
                     
                     # Update metrics
-                    self.latency.labels(model_name=self.model_name, status="success").observe(duration)
-                    self.requests.labels(model_name=self.model_name, status="success").inc()
-                    self.tokens_processed.labels(model_name=self.model_name, type="input").inc(validated_response["tokens"]["input"])
-                    self.tokens_processed.labels(model_name=self.model_name, type="output").inc(validated_response["tokens"]["output"])
+                    queue_time = time.perf_counter() - start_time - duration
+                    self.queue_time.labels(model_name=self.model_name).observe(queue_time)
+                    
+                    self.latency.labels(
+                        model_name=self.model_name,
+                        status="success",
+                        operation="generate"
+                    ).observe(duration)
+                    self.requests.labels(
+                        model_name=self.model_name,
+                        status="success",
+                        operation="generate"
+                    ).inc()
+                    self.tokens_processed.labels(
+                        model_name=self.model_name,
+                        type="input",
+                        status="success"
+                    ).inc(validated_response["tokens"]["input"])
+                    self.tokens_processed.labels(
+                        model_name=self.model_name,
+                        type="output",
+                        status="success"
+                    ).inc(validated_response["tokens"]["output"])
+                    self.response_length.labels(
+                        model_name=self.model_name,
+                        status="success"
+                    ).observe(len(validated_response["text"]))
                     
                     # Estimate memory usage (rough estimate: 4 bytes per token)
                     total_tokens = validated_response["tokens"]["input"] + validated_response["tokens"]["output"]
-                    self.memory_usage.labels(model_name=self.model_name).set(total_tokens * 4)
+                    self.memory_usage.labels(
+                        model_name=self.model_name,
+                        type="total"
+                    ).set(total_tokens * 4)
                     
                     return validated_response
 
             except httpx.ReadTimeout as e:
                 last_error = e
                 self.logger.warning(f"Timeout during Ollama API call (attempt {attempt + 1}/{self.max_retries})")
-                self.requests.labels(model_name=self.model_name, status="timeout").inc()
+                self.requests.labels(
+                    model_name=self.model_name,
+                    status="timeout",
+                    operation="generate"
+                ).inc()
+                self.errors.labels(
+                    model_name=self.model_name,
+                    error_type="timeout"
+                ).inc()
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
 
@@ -123,17 +175,56 @@ class OllamaModel:
                 error_type = type(e).__name__
                 error_msg = str(e)
                 self.logger.error(f"{error_type} during Ollama API call: {error_msg}")
-                self.requests.labels(model_name=self.model_name, status="error").inc()
+                self.requests.labels(
+                    model_name=self.model_name,
+                    status="error",
+                    operation="generate"
+                ).inc()
+                self.errors.labels(
+                    model_name=self.model_name,
+                    error_type=error_type.lower()
+                ).inc()
+                self.latency.labels(
+                    model_name=self.model_name,
+                    status="error",
+                    operation="generate"
+                ).observe(time.perf_counter() - start_time)
                 raise ModelError(f"{error_type}: {error_msg}")
             
             except Exception as e:
                 error_type = type(e).__name__
                 error_msg = str(e)
                 self.logger.error(f"Unexpected {error_type} during Ollama API call: {error_msg}")
-                self.requests.labels(model_name=self.model_name, status="error").inc()
+                self.requests.labels(
+                    model_name=self.model_name,
+                    status="error",
+                    operation="generate"
+                ).inc()
+                self.errors.labels(
+                    model_name=self.model_name,
+                    error_type="unexpected"
+                ).inc()
+                self.latency.labels(
+                    model_name=self.model_name,
+                    status="error",
+                    operation="generate"
+                ).observe(time.perf_counter() - start_time)
                 raise ModelError(f"Unexpected error: {error_msg}")
 
-        self.requests.labels(model_name=self.model_name, status="timeout").inc()
+        self.requests.labels(
+            model_name=self.model_name,
+            status="timeout",
+            operation="generate"
+        ).inc()
+        self.errors.labels(
+            model_name=self.model_name,
+            error_type="max_retries_exceeded"
+        ).inc()
+        self.latency.labels(
+            model_name=self.model_name,
+            status="timeout",
+            operation="generate"
+        ).observe(time.perf_counter() - start_time)
         raise ModelError(f"Model response timeout after {self.max_retries} retries: {str(last_error)}")
 
     async def generate_batch(self, prompts: List[str], **kwargs) -> List[Dict[str, Any]]:
