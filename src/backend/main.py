@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from .monitoring import metrics_router
+
 from .config import settings
 from .database import (
     Account,
@@ -59,6 +61,9 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
+
+# Include routers
+app.include_router(metrics_router)
 
 # OAuth2 configuration
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
