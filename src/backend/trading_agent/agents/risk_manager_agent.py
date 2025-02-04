@@ -1,5 +1,6 @@
 import json
 import logging
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -9,9 +10,11 @@ from src.models.metrics import WebSocketMetrics
 from src.shared.config.price_thresholds import PriceThresholds
 from src.shared.db.database_manager import DatabaseManager
 from src.shared.models.alerts import Alert, AlertLevel
-from src.shared.models.deepseek import DeepSeek1_5B
+from src.shared.models.ollama import OllamaModel
 from src.shared.models.pydantic_models import Portfolio, Position, Trade
 from src.shared.utils.fallback_manager import FallbackManager
+from src.shared.models.adaptive_thresholds import AdaptiveThresholds
+from src.shared.models.prompt_templates import PromptTemplates
 
 from .base_agent import BaseAgent
 
@@ -43,7 +46,9 @@ class RiskManagerAgent(BaseAgent):
                 "size_per_stage": [0.2, 0.25, 0.2],
             },
         )
-        self.model = DeepSeek1_5B(quantized=True)
+        self.model = OllamaModel("deepseek-r1:8b")
+        self.templates = PromptTemplates()
+        self.adaptive_thresholds = AdaptiveThresholds()
         self.cache = {}
         self.loss_limits: Dict[str, float] = {}  # 止损限额
         self.alerts: List[Alert] = []  # 风险预警
@@ -510,7 +515,7 @@ class RiskManagerAgent(BaseAgent):
             recommendations.append("Reduce leverage")
         if concentration_warning:
             recommendations.append("Diversify positions")
-        return recommendations if recommendations else None
+        return recommendations if recommendations else []
 
     async def validate_trade(
         self, trade: Trade, portfolio: Portfolio
