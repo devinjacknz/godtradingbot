@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from .monitoring import metrics_router
+from .monitoring.alerts import AlertManager
 
 from .config import settings
 from .database import (
@@ -97,6 +98,7 @@ app.add_middleware(
 async def startup_event() -> None:
     init_db()  # Initialize PostgreSQL
     init_mongodb()  # Initialize MongoDB collections
+    AlertManager.get_instance()  # Initialize AlertManager singleton
 
 
 # Market Analysis endpoint
