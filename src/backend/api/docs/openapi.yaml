@@ -1,0 +1,431 @@
+openapi: 3.0.0
+info:
+  title: Trading Bot API
+  description: API documentation for the trading bot system
+  version: 1.0.0
+  
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Development server
+  - url: https://api.tradingbot.com/v1
+    description: Production server
+    
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+          
+    Trade:
+      type: object
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        amount:
+          type: number
+          format: float
+        price:
+          type: number
+          format: float
+        timestamp:
+          type: string
+          format: date-time
+          
+    Position:
+      type: object
+      properties:
+        symbol:
+          type: string
+        size:
+          type: number
+        entry_price:
+          type: number
+        current_price:
+          type: number
+        pnl:
+          type: number
+        margin:
+          type: number
+          
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning, error, critical]
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+          
+    MetricsResponse:
+      type: object
+      properties:
+        cpu_usage:
+          type: number
+        memory_usage:
+          type: number
+        network_latency:
+          type: number
+        trade_count:
+          type: integer
+          
+security:
+  - bearerAuth: []
+    
+paths:
+  /trades:
+    get:
+      summary: Get trade history
+      parameters:
+        - in: query
+          name: symbol
+          schema:
+            type: string
+        - in: query
+          name: start_time
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: end_time
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: List of trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trade'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+    post:
+      summary: Place a new trade
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - symbol
+                - side
+                - amount
+              properties:
+                symbol:
+                  type: string
+                side:
+                  type: string
+                  enum: [buy, sell]
+                amount:
+                  type: number
+                price:
+                  type: number
+      responses:
+        '201':
+          description: Trade created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trade'
+        '400':
+          description: Invalid trade parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /positions:
+    get:
+      summary: Get current positions
+      responses:
+        '200':
+          description: List of positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Position'
+                  
+  /positions/{symbol}:
+    get:
+      summary: Get position for a specific symbol
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Position details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+        '404':
+          description: Position not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /alerts:
+    get:
+      summary: Get system alerts
+      parameters:
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum: [info, warning, error, critical]
+        - in: query
+          name: start_time
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: List of alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Alert'
+                  
+  /metrics:
+    get:
+      summary: Get system metrics
+      responses:
+        '200':
+          description: System metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+                
+  /config:
+    get:
+      summary: Get current configuration
+      responses:
+        '200':
+          description: Current configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                
+    put:
+      summary: Update configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Configuration updated
+        '400':
+          description: Invalid configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /strategies:
+    get:
+      summary: Get trading strategies
+      responses:
+        '200':
+          description: List of strategies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    status:
+                      type: string
+                    performance:
+                      type: object
+                      
+    post:
+      summary: Add new strategy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - config
+              properties:
+                name:
+                  type: string
+                config:
+                  type: object
+      responses:
+        '201':
+          description: Strategy created
+        '400':
+          description: Invalid strategy configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /strategies/{strategy_id}:
+    get:
+      summary: Get strategy details
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Strategy details
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+    put:
+      summary: Update strategy
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Strategy updated
+        '400':
+          description: Invalid strategy configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+    delete:
+      summary: Delete strategy
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Strategy deleted
+        '404':
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /strategies/{strategy_id}/start:
+    post:
+      summary: Start strategy
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Strategy started
+        '404':
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /strategies/{strategy_id}/stop:
+    post:
+      summary: Stop strategy
+      parameters:
+        - in: path
+          name: strategy_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Strategy stopped
+        '404':
+          description: Strategy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error' 

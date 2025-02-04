@@ -1,1 +1,0 @@
-"""Shared modules package."""

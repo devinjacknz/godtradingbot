@@ -1,0 +1,117 @@
+app:
+  name: tradingbot
+  version: 1.0.0
+  env: development
+
+server:
+  http:
+    port: 8080
+    read_timeout: 10s
+    write_timeout: 10s
+  grpc:
+    port: 50051
+  websocket:
+    port: 8081
+    ping_interval: 30s
+    pong_wait: 60s
+
+database:
+  mongodb:
+    uri: mongodb://localhost:27017
+    database: tradingbot
+    max_pool_size: 100
+    min_pool_size: 10
+  redis:
+    addr: localhost:6379
+    db: 0
+    pool_size: 100
+  postgresql:
+    host: localhost
+    port: 5432
+    user: tradingbot
+    password: ""
+    dbname: tradingbot
+    sslmode: disable
+    max_open_conns: 100
+    max_idle_conns: 10
+
+trading:
+  order:
+    max_open_orders: 100
+    price_precision: 8
+    quantity_precision: 8
+    commission: 0.001  # 0.1% commission
+    slippage: 0.001   # 0.1% slippage
+  risk:
+    max_position_size: 1000000
+    max_drawdown_percent: 10
+    margin_requirement: 0.1
+
+market:
+  handler:
+    update_interval: 1s
+    max_symbols: 1000
+    buffer_size: 1000
+    reconnect_timeout: 5s
+  providers:
+    solana:
+      rpc_url: "https://api.mainnet-beta.solana.com"
+      ws_url: "wss://api.mainnet-beta.solana.com"
+      request_timeout: 10s
+    pump:
+      base_url: "https://pump.fun/api"
+      ws_url: "wss://pump.fun/ws"
+      request_timeout: 10s
+
+pricing:
+  engine:
+    update_interval: 1s
+    history_size: 1000
+    price_timeout: 5m
+    cleanup_interval: 1m
+  indicators:
+    rsi:
+      period: 14
+      overbought: 70
+      oversold: 30
+    macd:
+      fast_period: 12
+      slow_period: 26
+      signal_period: 9
+    bollinger:
+      period: 20
+      std_dev: 2
+
+backtest:
+  data:
+    source: "csv"  # csv, database, or api
+    directory: "data/historical"
+    format: "solana"  # data format
+  output:
+    directory: "results"
+    save_trades: true
+    save_signals: true
+  analysis:
+    min_confidence: 0.6
+    max_volatility: 0.02
+    time_range:
+      start: "09:30"
+      end: "16:00"
+    indicators:
+      rsi:
+        min: 20
+        max: 80
+      macd:
+        min_strength: 0.0001
+      bollinger:
+        deviation: 2.0
+
+logging:
+  level: debug
+  format: json
+  output: stdout
+
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics

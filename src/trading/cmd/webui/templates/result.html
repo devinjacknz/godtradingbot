@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trading Bot - Result Details</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Backtest Result Details</h1>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/results">Results</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="result-summary">
+                <h2>{{.Symbol}} - {{.StartTime.Format "2006-01-02"}} to {{.EndTime.Format "2006-01-02"}}</h2>
+                <div class="metrics-grid">
+                    <div class="metric">
+                        <h3>Total Return</h3>
+                        <p>{{printf "%.2f%%" (mul .TotalReturn 100)}}</p>
+                    </div>
+                    <div class="metric">
+                        <h3>Win Rate</h3>
+                        <p>{{printf "%.2f%%" (mul .WinRate 100)}}</p>
+                    </div>
+                    <div class="metric">
+                        <h3>Sharpe Ratio</h3>
+                        <p>{{printf "%.2f" .SharpeRatio}}</p>
+                    </div>
+                    <div class="metric">
+                        <h3>Max Drawdown</h3>
+                        <p>{{printf "%.2f%%" (mul .MaxDrawdown 100)}}</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="charts">
+                <div class="chart-container">
+                    <h3>Equity Curve</h3>
+                    <canvas id="equity-chart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Monthly Returns</h3>
+                    <canvas id="monthly-returns-chart"></canvas>
+                </div>
+            </section>
+
+            <section class="trades">
+                <h3>Recent Trades</h3>
+                <table id="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Price</th>
+                            <th>Size</th>
+                            <th>PnL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Trades}}
+                        <tr>
+                            <td>{{.Time.Format "2006-01-02 15:04:05"}}</td>
+                            <td>{{.Type}}</td>
+                            <td>{{printf "%.2f" .Price}}</td>
+                            <td>{{printf "%.4f" .Size}}</td>
+                            <td class="{{if gt .PnL 0.0}}profit{{else}}loss{{end}}">
+                                {{printf "%.2f" .PnL}}
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2024 Trading Bot</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/main.js"></script>
+    <script>
+        // Load result data
+        fetch('/api/result/{{.ID}}')
+            .then(response => response.json())
+            .then(result => {
+                // Initialize equity curve chart
+                const equityCtx = document.getElementById('equity-chart').getContext('2d');
+                new Chart(equityCtx, {
+                    type: 'line',
+                    data: {
+                        labels: result.equity_curve.map(point => point.time),
+                        datasets: [{
+                            label: 'Portfolio Value',
+                            data: result.equity_curve.map(point => point.value),
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Equity Curve'
+                            }
+                        }
+                    }
+                });
+
+                // Initialize monthly returns chart
+                const monthlyCtx = document.getElementById('monthly-returns-chart').getContext('2d');
+                new Chart(monthlyCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: result.monthly_returns.map(point => point.month),
+                        datasets: [{
+                            label: 'Monthly Return (%)',
+                            data: result.monthly_returns.map(point => point.return * 100),
+                            backgroundColor: result.monthly_returns.map(point => 
+                                point.return >= 0 ? 'rgba(75, 192, 192, 0.5)' : 'rgba(255, 99, 132, 0.5)'
+                            )
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Monthly Returns'
+                            }
+                        }
+                    }
+                });
+            });
+    </script>
+</body>
+</html> 
