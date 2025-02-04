@@ -49,6 +49,38 @@ Before setting up the application, ensure you have the following installed:
    - Backend configuration: `src/backend/.env`
    - Frontend configuration: `src/frontend/.env`
 
+## API Documentation
+
+### Market Data Endpoints
+- `GET /v1/price/{dex}/{symbol}` - Get current price from specific DEX
+- `GET /v1/history/{dex}/{symbol}` - Get historical price data
+- `GET /api/v1/price/{symbol}` - Get current price from Pump.fun
+- `GET /api/v1/historical/{symbol}` - Get historical price data from Pump.fun
+
+### Trading Endpoints
+- `POST /api/v1/orders` - Create new order
+- `GET /api/v1/orders` - List all orders
+- `GET /api/v1/orders/{order_id}` - Get specific order details
+
+### Account Management
+- `GET /api/v1/account/balance` - Get account balance
+- `GET /api/v1/account/positions` - Get all positions
+
+### Risk Management
+- `GET /api/v1/risk/metrics` - Get risk metrics
+- `GET /api/v1/risk/limits` - Get risk limit settings
+- `POST /api/v1/risk/limits` - Update risk limit settings
+
+### WebSocket Endpoints
+- `/ws/market/{dex}` - Real-time market data stream
+- `/ws/pump` - Real-time Pump.fun data stream
+- `/ws/trades` - Real-time trade updates
+- `/ws/positions` - Real-time position updates
+- `/ws/orders` - Real-time order updates
+- `/ws/risk` - Real-time risk metrics updates
+
+For full API documentation, see [api.md](api.md)
+
 ## Development
 
 ### Backend Development
