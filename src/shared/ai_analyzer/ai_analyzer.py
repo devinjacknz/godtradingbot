@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from typing import Any, Dict, Optional
+from .trade_analyzer import TradeAnalyzer
 
 
 class AIAnalyzer:
@@ -11,6 +12,7 @@ class AIAnalyzer:
         self.logger = logging.getLogger(__name__)
         self.model = None
         self.api_key = api_key
+        self.trade_analyzer = TradeAnalyzer()
 
     async def start(self) -> bool:
         try:
@@ -33,22 +35,22 @@ class AIAnalyzer:
             "Validating trade with %s: %s", self.model["name"], trade_params
         )
         try:
+            analysis = await self.trade_analyzer.analyze_trade(
+                trade_params.get("market_data", {}),
+                trade_params.get("technical_signals", {})
+            )
+            
             validation = {
-                "is_valid": True,
-                "risk_assessment": {
-                    "risk_level": 0.5,
-                    "max_loss": 5.0,
-                    "position_size": trade_params.get("amount", 0),
-                    "volatility_exposure": 0.3,
-                },
+                "is_valid": analysis.action != "hold",
+                "risk_assessment": analysis.risk_assessment,
                 "validation_metrics": {
-                    "market_conditions_alignment": 0.8,
-                    "risk_reward_ratio": 2.0,
-                    "expected_return": 0.15,
+                    "market_conditions_alignment": analysis.confidence,
+                    "risk_reward_ratio": analysis.risk_assessment.get("risk_reward_ratio", 0),
+                    "expected_return": analysis.risk_assessment.get("expected_return", 0),
                 },
-                "recommendations": ["Consider setting stop loss at -5%"],
-                "confidence": 0.95,
-                "reason": "Trade aligns with current market conditions",
+                "recommendations": analysis.recommendations,
+                "confidence": analysis.confidence,
+                "reason": analysis.reasoning
             }
             self.logger.info("Trade validation completed: %s", validation)
             return validation

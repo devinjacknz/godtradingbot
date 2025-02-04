@@ -121,6 +121,34 @@
   - Risk metrics updates
   - 风险指标更新
 
+- /ws/analysis
+  - AI analysis updates
+  - AI分析更新
+  - Message Format:
+    ```json
+    {
+      "type": "ai_analysis",
+      "data": {
+        "symbol": "string",
+        "action": "buy|sell|hold",
+        "confidence": "float",
+        "reasoning": "string",
+        "risk_assessment": {
+          "risk_reward_ratio": "float",
+          "expected_return": "float",
+          "market_volatility": "float",
+          "position_size_recommendation": "float"
+        },
+        "recommendations": {
+          "entry_price": "float",
+          "stop_loss": "float",
+          "take_profit": "float"
+        }
+      },
+      "timestamp": "ISO-8601 datetime"
+    }
+    ```
+
 ### WebSocket Message Format (WebSocket 消息格式)
 ```json
 {
