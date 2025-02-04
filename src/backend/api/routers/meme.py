@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Dict, List
 
 import numpy as np
@@ -9,10 +10,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from redis import Redis
 
+from src.shared.models.meme_trading import MemeOrder, MemeOpportunity
+from src.backend.trading.meme_manager import MemeManager
 from ..deps import get_current_user, get_database, get_redis
 
 router = APIRouter(prefix="/meme", tags=["meme"])
 logger = logging.getLogger(__name__)
+meme_manager = MemeManager()
 
 
 class VolatilityThresholds:
@@ -104,6 +108,34 @@ async def get_meme_volatility(
         logger.error(f"Failed to get meme volatility: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/trade")
+async def create_meme_trade(
+    order: MemeOrder,
+    current_user=Depends(get_current_user)
+) -> Dict:
+    try:
+        return await meme_manager.execute_trade(order)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/scan")
+async def scan_opportunities(
+    min_market_cap: float = 100000,
+    min_volume: float = 50000,
+    min_holders: int = 1000,
+    max_risk: float = 0.7,
+    current_user=Depends(get_current_user)
+) -> List[MemeOpportunity]:
+    try:
+        return await meme_manager.scan_opportunities(
+            min_market_cap=Decimal(str(min_market_cap)),
+            min_volume=Decimal(str(min_volume)),
+            min_holders=min_holders,
+            max_risk=Decimal(str(max_risk))
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/trending")
 async def get_trending_memes(
