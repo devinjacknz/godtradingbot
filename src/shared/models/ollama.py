@@ -247,7 +247,19 @@ class OllamaModel:
                     "tokens": {"input": 0, "output": 0}
                 })
             else:
-                processed_results.append(result)
+                # Ensure result is properly typed
+                if isinstance(result, dict):
+                    processed_results.append(result)
+                else:
+                    processed_results.append({
+                        "error": "Invalid response format",
+                        "success": False,
+                        "text": str(result),
+                        "confidence": 0.0,
+                        "metadata": {},
+                        "parsed": {},
+                        "tokens": {"input": 0, "output": 0}
+                    })
         
         # Record batch metrics
         total_tokens = sum(

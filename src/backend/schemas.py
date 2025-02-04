@@ -120,6 +120,11 @@ class StrategyListResponse(BaseModel):
     strategies: List[StrategyResponse]
 
 
+class AgentListResponse(BaseModel):
+    agents: List[str] = Field(description="List of available agent types")
+    count: int = Field(description="Total number of available agents")
+
+
 # Error Response Schema
 class AccountBase(BaseModel):
     user_id: str
@@ -226,7 +231,5 @@ class LimitSettingsResponse(LimitSettingsBase):
 
     class Config:
         from_attributes = True
-
-
 class ErrorResponse(BaseModel):
     detail: str
