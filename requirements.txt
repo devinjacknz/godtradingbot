@@ -14,6 +14,8 @@ passlib==1.7.4
 python-multipart==0.0.6
 aiohttp==3.8.4
 websockets==11.0.3
+prometheus-client==0.19.0
+tiktoken==0.5.2
 
 # Development Dependencies
 black>=21.9b0
