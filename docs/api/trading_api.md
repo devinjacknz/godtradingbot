@@ -59,10 +59,61 @@
     }
     ```
 
+### System Monitoring (系统监控)
+- GET /metrics
+  - Returns Prometheus format metrics
+  - 返回Prometheus格式指标
+  - Content-Type: text/plain
+  - Includes:
+    - Model performance metrics (模型性能指标)
+    - Trading system metrics (交易系统指标)
+    - Risk management metrics (风险管理指标)
+
+- GET /api/v1/monitoring/alerts
+  - Returns alert history
+  - 返回告警历史
+  - Response:
+    ```json
+    {
+      "alerts": [
+        {
+          "level": "critical|warning|info",
+          "message": "string",
+          "timestamp": "ISO-8601",
+          "metadata": {}
+        }
+      ]
+    }
+    ```
+
+- GET /api/v1/monitoring/audit
+  - Returns system audit logs
+  - 返回系统审计日志
+  - Query Parameters:
+    - start_time: ISO-8601
+    - end_time: ISO-8601
+    - user_id: string
+    - severity: string
+    - limit: integer
+  - Response:
+    ```json
+    {
+      "logs": [
+        {
+          "action": "string",
+          "details": {},
+          "timestamp": "ISO-8601",
+          "user_id": "string",
+          "severity": "string"
+        }
+      ]
+    }
+    ```
+
 ### Risk Control (风险控制)
 - GET /api/v1/risk/metrics
-  - Get risk metrics
-  - 获取风险指标
+  - Get risk metrics with AI analysis
+  - 获取风险指标及AI分析
   - Response:
     ```json
     {
@@ -70,7 +121,12 @@
       "margin_used": "float",
       "margin_ratio": "float",
       "daily_pnl": "float",
-      "total_pnl": "float"
+      "total_pnl": "float",
+      "ai_analysis": {
+        "risk_level": "low|medium|high",
+        "confidence": "float",
+        "recommendations": ["string"]
+      }
     }
     ```
 
@@ -120,6 +176,42 @@
 - /ws/risk
   - Risk metrics updates
   - 风险指标更新
+
+- /ws/alerts
+  - Real-time system alerts
+  - 实时系统告警
+  - Message Format:
+    ```json
+    {
+      "level": "critical|warning|info",
+      "message": "string",
+      "timestamp": "ISO-8601",
+      "metadata": {}
+    }
+    ```
+
+- /ws/metrics
+  - Real-time performance metrics
+  - 实时性能指标
+  - Message Format:
+    ```json
+    {
+      "type": "metrics",
+      "data": {
+        "model_metrics": {
+          "latency": "float",
+          "requests_per_second": "float",
+          "error_rate": "float"
+        },
+        "system_metrics": {
+          "memory_usage": "float",
+          "cpu_usage": "float",
+          "active_connections": "integer"
+        }
+      },
+      "timestamp": "ISO-8601"
+    }
+    ```
 
 - /ws/analysis
   - AI analysis updates
