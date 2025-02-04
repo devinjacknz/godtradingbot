@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from .monitoring import metrics_router
 from .monitoring.alerts import AlertManager
+from .monitoring.audit_log import AuditLogger
 
 from .config import settings
 from .database import (
@@ -99,6 +100,7 @@ async def startup_event() -> None:
     init_db()  # Initialize PostgreSQL
     init_mongodb()  # Initialize MongoDB collections
     AlertManager.get_instance()  # Initialize AlertManager singleton
+    AuditLogger.get_instance()  # Initialize AuditLogger singleton
 
 
 # Market Analysis endpoint

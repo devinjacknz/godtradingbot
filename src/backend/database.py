@@ -37,15 +37,17 @@ async_mongodb = async_mongodb_client.get_database()
 
 def init_mongodb() -> bool:
     try:
-        if "market_snapshots" not in mongodb.list_collection_names():
-            mongodb.create_collection("market_snapshots")
-            mongodb.market_snapshots.create_index("symbol")
-            mongodb.market_snapshots.create_index("timestamp")
-
-        if "technical_analysis" not in mongodb.list_collection_names():
-            mongodb.create_collection("technical_analysis")
-            mongodb.technical_analysis.create_index("symbol")
-            mongodb.technical_analysis.create_index("timestamp")
+        collections = {
+            "market_snapshots": ["symbol", "timestamp"],
+            "technical_analysis": ["symbol", "timestamp"],
+            "audit_logs": ["timestamp", "user_id", "severity"]
+        }
+        
+        for collection, indices in collections.items():
+            if collection not in mongodb.list_collection_names():
+                mongodb.create_collection(collection)
+                for index in indices:
+                    mongodb[collection].create_index(index)
         return True
     except Exception as e:
         print(f"Error initializing MongoDB: {e}")
