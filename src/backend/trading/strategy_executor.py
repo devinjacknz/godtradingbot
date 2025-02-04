@@ -1,7 +1,9 @@
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional
+import logging
+import time
+from typing import Dict
 
 import numpy as np
 from prometheus_client import Counter, Gauge, Histogram
@@ -32,6 +34,7 @@ class StrategyExecutor:
         self.weights = {}
         self.performance_history = {}
         self.state = {}
+        self.logger = logging.getLogger(__name__)
 
         # 性能指标
         self.metrics = {
@@ -107,12 +110,10 @@ class StrategyExecutor:
                 self.metrics["concurrent_strategies"].set(len(active_strategies))
 
                 # 创建策略执行任务
-                tasks = []
-                for strategy_id in active_strategies:
-                    task = asyncio.create_task(
-                        self._execute_single_strategy(strategy_id)
-                    )
-                    tasks.append(task)
+                tasks = [
+                    asyncio.create_task(self._execute_single_strategy(sid))
+                    for sid in active_strategies
+                ]
 
                 # 等待所有策略执行完成
                 if tasks:
@@ -183,12 +184,10 @@ class StrategyExecutor:
                 )
 
                 # 计算综合得分
-                score = (
-                    success_rate * 0.4  # 成功率权重40%
-                    + (1 - avg_execution_time / 0.2) * 0.3  # 执行时间权重30%
-                    + (avg_pnl / 100) * 0.3  # 收益权重30%
-                )
-                scores[strategy_id] = max(0.1, min(1.0, score))  # 限制权重范围
+                score = (success_rate * 0.4 +
+                        (1 - avg_execution_time / 0.2) * 0.3 +
+                        (avg_pnl / 100) * 0.3)
+                scores[strategy_id] = max(0.1, min(float(1.0), float(score)))
 
             # 归一化权重
             total_score = sum(scores.values())

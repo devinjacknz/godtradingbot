@@ -176,7 +176,6 @@ async def broadcast_position_update(position: Dict[str, Any]) -> None:
         "positions",
     )
 
-
 async def broadcast_order_update(order: Dict[str, Any]) -> None:
     """Broadcast order updates to all connected clients"""
     await manager.broadcast_to_type(

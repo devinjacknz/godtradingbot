@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 import httpx
 import logging
 import json
@@ -235,19 +235,20 @@ class OllamaModel:
         processed_results: List[Dict[str, Any]] = []
         
         for result in results:
+            error_result: Dict[str, Any] = {
+                "error": str(result) if isinstance(result, Exception) else "",
+                "success": not isinstance(result, Exception),
+                "text": "",
+                "confidence": 0.0,
+                "metadata": {},
+                "parsed": {},
+                "tokens": {"input": 0, "output": 0}
+            }
             if isinstance(result, Exception):
                 self.requests.labels(model_name=self.model_name, status="error").inc()
-                processed_results.append({
-                    "error": str(result),
-                    "success": False,
-                    "text": "",
-                    "confidence": 0.0,
-                    "metadata": {},
-                    "parsed": {},
-                    "tokens": {"input": 0, "output": 0}
-                })
+                processed_results.append(error_result)
             else:
-                processed_results.append(result)
+                processed_results.append(result if isinstance(result, dict) else error_result)
         
         # Record batch metrics
         total_tokens = sum(
@@ -257,3 +258,43 @@ class OllamaModel:
         self.memory_usage.labels(model_name=self.model_name).set(total_tokens * 4)
         
         return processed_results
+
+    async def analyze_market(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        prompt = f"""Analyze the following market data:
+Symbol: {market_data['symbol']}
+Price: {market_data['price']}
+Volume: {market_data['volume']}
+Technical Indicators: {json.dumps(market_data.get('indicators', {}))}
+
+Provide analysis in JSON format with the following structure:
+{{
+    "trend": "bullish/bearish/neutral",
+    "confidence": 0.0-1.0,
+    "signals": ["signal1", "signal2"],
+    "risk_level": "low/medium/high",
+    "analysis": "detailed analysis text"
+}}"""
+
+        try:
+            response = await self.generate(prompt)
+            if not response.get("parsed"):
+                raise ModelError("Failed to parse market analysis response")
+            analysis = response["parsed"]
+            if not isinstance(analysis, dict):
+                raise ModelError("Invalid analysis format")
+            required_fields = ["trend", "confidence", "signals", "risk_level", "analysis"]
+            if not all(field in analysis for field in required_fields):
+                raise ModelError("Missing required fields in analysis")
+            return {
+                "trend": analysis["trend"],
+                "confidence": float(analysis["confidence"]),
+                "signals": analysis["signals"],
+                "risk_level": analysis["risk_level"],
+                "analysis": analysis["analysis"],
+                "metadata": response.get("metadata", {}),
+                "model_confidence": response["confidence"]
+            }
+        except json.JSONDecodeError as e:
+            raise ModelError(f"Failed to parse analysis result: {str(e)}")
+        except Exception as e:
+            raise ModelError(f"Market analysis failed: {str(e)}")
