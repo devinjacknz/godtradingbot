@@ -1,18 +1,21 @@
 import asyncio
+import itertools
 import json
 import logging
 import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 import aiohttp
 import aioping
 import aiosmtplib
 import asyncpg
+import numpy as np
 import psutil
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -24,10 +27,21 @@ class AlertLevel(Enum):
     CRITICAL = "critical"
 
 
+class AlertCategory(Enum):
+    SYSTEM = "system"
+    DEX = "dex"
+    MEME = "meme"
+    TRADING = "trading"
+    RISK = "risk"
+    CROSS_DEX = "cross_dex"
+
+
 class AlertState(Enum):
     ACTIVE = "active"
     RESOLVED = "resolved"
     ACKNOWLEDGED = "acknowledged"
+    ESCALATED = "escalated"
+    SUPPRESSED = "suppressed"
 
 
 @dataclass
@@ -120,19 +134,21 @@ class AlertManager:
                 await asyncio.sleep(60)
 
     async def create_alert(self, alert_data: Dict):
-        """创建告警"""
+        """Create alert with enhanced categorization"""
         try:
             alert_id = alert_data.get("id") or str(uuid.uuid4())
             level = AlertLevel(alert_data.get("level", "warning"))
+            category = AlertCategory(alert_data.get("category", "system"))
 
-            # 更新指标
+            # Update metrics
             self.metrics.alert_count.labels(level=level.value).inc()
             self.metrics.active_alerts.labels(level=level.value).inc()
 
-            # 创建告警记录
+            # Create alert record
             alert = {
                 "id": alert_id,
                 "level": level,
+                "category": category,
                 "message": alert_data["message"],
                 "source": alert_data.get("source", "system"),
                 "timestamp": datetime.now(),
@@ -143,13 +159,13 @@ class AlertManager:
                 "metadata": alert_data.get("metadata", {}),
             }
 
-            # 存储告警
+            # Store alert
             self.active_alerts[alert_id] = alert
             self.alert_history.append(alert.copy())
 
-            # 检查是否需要立即通知
+            # Check if immediate notification is needed
             if level in [AlertLevel.ERROR, AlertLevel.CRITICAL]:
-                await self._send_immediate_notification(alert)
+                await self._send_notification(alert, "immediate")
 
         except Exception as e:
             self.logger.error(f"Error creating alert: {str(e)}")
@@ -186,62 +202,276 @@ class AlertManager:
             self.logger.error(f"Error checking alert states: {str(e)}")
 
     async def _check_alert_resolved(self, alert: Dict) -> bool:
-        """检查告警是否已解决"""
+        """Check if alert is resolved with enhanced category handling"""
         try:
-            # 检查恢复计数
+            # Check recovery count
             if alert["recovery_count"] >= self.alert_config["recovery_threshold"]:
                 return True
 
-            # 检查告警源
-            if alert["source"] == "system":
-                # 系统告警检查
-                return await self._check_system_alert(alert)
-            elif alert["source"] == "application":
-                # 应用告警检查
-                return await self._check_application_alert(alert)
+            # Check alert category
+            category = alert.get("category", AlertCategory.SYSTEM)
+            
+            if category == AlertCategory.SYSTEM:
+                return await self._check_system_recovery(alert)
+            elif category == AlertCategory.DEX:
+                return await self._check_dex_recovery(alert)
+            elif category == AlertCategory.MEME:
+                return await self._check_meme_recovery(alert)
+            elif category == AlertCategory.CROSS_DEX:
+                return await self._check_cross_dex_recovery(alert)
             else:
-                # 其他类型告警
-                return False
+                return await self._check_application_recovery(alert)
 
         except Exception as e:
             self.logger.error(f"Error checking alert resolution: {str(e)}")
             return False
 
-    async def _aggregate_alerts(self):
-        """聚合告警"""
+    async def _check_dex_recovery(self, alert: Dict) -> bool:
+        """Check DEX alert recovery"""
         try:
-            # 按来源和类型分组
+            metrics = alert.get("metadata", {})
+            alert_type = metrics.get("type")
+
+            if alert_type == "liquidity":
+                current = float(metrics.get("current_liquidity", 0))
+                threshold = float(metrics.get("threshold", 0))
+                return current >= threshold
+            elif alert_type == "slippage":
+                current = float(metrics.get("current_slippage", 0))
+                threshold = float(metrics.get("threshold", 0))
+                return current <= threshold
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking DEX recovery: {str(e)}")
+            return False
+
+    async def _check_meme_recovery(self, alert: Dict) -> bool:
+        """Check meme token alert recovery"""
+        try:
+            metrics = alert.get("metadata", {})
+            alert_type = metrics.get("type")
+
+            if alert_type == "volume":
+                current = float(metrics.get("current_volume", 0))
+                threshold = float(metrics.get("threshold", 0))
+                return current >= threshold
+            elif alert_type == "holders":
+                current = int(metrics.get("current_holders", 0))
+                threshold = int(metrics.get("threshold", 0))
+                return current >= threshold
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking meme recovery: {str(e)}")
+            return False
+
+    async def _check_cross_dex_recovery(self, alert: Dict) -> bool:
+        """Check cross-DEX alert recovery"""
+        try:
+            metrics = alert.get("metadata", {})
+            alert_type = metrics.get("type")
+
+            if alert_type == "spread":
+                current = float(metrics.get("current_spread", 0))
+                threshold = float(metrics.get("threshold", 0))
+                return current <= threshold
+            elif alert_type == "arbitrage":
+                current = float(metrics.get("current_opportunity", 0))
+                threshold = float(metrics.get("threshold", 0))
+                return current <= threshold
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking cross-DEX recovery: {str(e)}")
+            return False
+
+    async def _aggregate_alerts(self):
+        """Aggregate alerts with enhanced categorization"""
+        try:
+            # Group by category and level
             groups = {}
             for alert in self.active_alerts.values():
-                key = (alert["source"], alert["level"])
+                category = alert.get("category", AlertCategory.SYSTEM)
+                key = (category, alert["level"])
                 if key not in groups:
                     groups[key] = []
                 groups[key].append(alert)
 
-            # 处理每个分组
-            for (source, level), alerts in groups.items():
+            # Process each group
+            for (category, level), alerts in groups.items():
                 if len(alerts) > 1:
-                    # 创建聚合告警
-                    aggregated = {
-                        "id": f"agg_{source}_{level.value}_{datetime.now().strftime('%Y%m%d%H%M')}",
-                        "level": level,
-                        "message": f"Multiple alerts from {source} ({len(alerts)} alerts)",
-                        "source": source,
-                        "timestamp": datetime.now(),
-                        "state": AlertState.ACTIVE,
-                        "aggregated": True,
-                        "alerts": alerts,
-                    }
+                    # Special handling for different categories
+                    if category == AlertCategory.MEME:
+                        await self._aggregate_meme_alerts(alerts)
+                    elif category == AlertCategory.DEX:
+                        await self._aggregate_dex_alerts(alerts)
+                    elif category == AlertCategory.CROSS_DEX:
+                        await self._aggregate_cross_dex_alerts(alerts)
+                    else:
+                        # Default aggregation for other categories
+                        aggregated = {
+                            "id": f"agg_{category.value}_{level.value}_{datetime.now().strftime('%Y%m%d%H%M')}",
+                            "level": level,
+                            "category": category,
+                            "message": f"Multiple {category.value} alerts ({len(alerts)} alerts)",
+                            "timestamp": datetime.now(),
+                            "state": AlertState.ACTIVE,
+                            "aggregated": True,
+                            "alerts": alerts,
+                            "metadata": self._merge_alert_metadata(alerts)
+                        }
 
-                    # 替换原始告警
-                    for alert in alerts:
-                        if alert["id"] in self.active_alerts:
-                            del self.active_alerts[alert["id"]]
+                        # Replace original alerts
+                        for alert in alerts:
+                            if alert["id"] in self.active_alerts:
+                                del self.active_alerts[alert["id"]]
 
-                    self.active_alerts[aggregated["id"]] = aggregated
+                        self.active_alerts[aggregated["id"]] = aggregated
 
         except Exception as e:
             self.logger.error(f"Error aggregating alerts: {str(e)}")
+
+    async def _aggregate_meme_alerts(self, alerts: List[Dict]):
+        """Aggregate meme token specific alerts"""
+        try:
+            tokens = {}
+            for alert in alerts:
+                token = alert["metadata"].get("token", "unknown")
+                if token not in tokens:
+                    tokens[token] = []
+                tokens[token].append(alert)
+
+            for token, token_alerts in tokens.items():
+                # Calculate risk metrics
+                risk_score = self._calculate_meme_risk_score(token_alerts)
+                volume_change = np.mean([float(a["metadata"].get("volume_change", 0)) for a in token_alerts])
+                sentiment_change = np.mean([float(a["metadata"].get("sentiment_change", 0)) for a in token_alerts])
+
+                aggregated = {
+                    "id": f"meme_{token}_{datetime.now().strftime('%Y%m%d%H%M')}",
+                    "level": self._determine_meme_alert_level(risk_score),
+                    "category": AlertCategory.MEME,
+                    "message": f"Meme token {token} risk score: {risk_score:.2f}, Volume change: {volume_change:.1f}%, Sentiment: {sentiment_change:.1f}",
+                    "timestamp": datetime.now(),
+                    "state": AlertState.ACTIVE,
+                    "aggregated": True,
+                    "alerts": token_alerts,
+                    "metadata": {
+                        "token": token,
+                        "risk_score": risk_score,
+                        "volume_change": volume_change,
+                        "sentiment_change": sentiment_change
+                    }
+                }
+
+                # Replace original alerts
+                for alert in token_alerts:
+                    if alert["id"] in self.active_alerts:
+                        del self.active_alerts[alert["id"]]
+
+                self.active_alerts[aggregated["id"]] = aggregated
+
+        except Exception as e:
+            self.logger.error(f"Error aggregating meme alerts: {str(e)}")
+
+    async def _aggregate_dex_alerts(self, alerts: List[Dict]):
+        """Aggregate DEX specific alerts"""
+        try:
+            dexes = {}
+            for alert in alerts:
+                dex = alert["metadata"].get("dex", "unknown")
+                if dex not in dexes:
+                    dexes[dex] = []
+                dexes[dex].append(alert)
+
+            for dex, dex_alerts in dexes.items():
+                # Calculate DEX metrics
+                liquidity_score = float(np.mean([float(a["metadata"].get("liquidity_ratio", 0)) for a in dex_alerts]))
+                execution_score = float(np.mean([float(a["metadata"].get("execution_time", 0)) / 5.0 for a in dex_alerts]))
+                reliability_score = float(np.mean([float(a["metadata"].get("success_rate", 0)) for a in dex_alerts]))
+
+                aggregated = {
+                    "id": f"dex_{dex}_{datetime.now().strftime('%Y%m%d%H%M')}",
+                    "level": self._determine_dex_alert_level(liquidity_score, execution_score, reliability_score),
+                    "category": AlertCategory.DEX,
+                    "message": f"DEX {dex} metrics - Liquidity: {liquidity_score:.2f}, Execution: {execution_score:.2f}, Reliability: {reliability_score:.2f}",
+                    "timestamp": datetime.now(),
+                    "state": AlertState.ACTIVE,
+                    "aggregated": True,
+                    "alerts": dex_alerts,
+                    "metadata": {
+                        "dex": dex,
+                        "liquidity_score": liquidity_score,
+                        "execution_score": execution_score,
+                        "reliability_score": reliability_score
+                    }
+                }
+
+                # Replace original alerts
+                for alert in dex_alerts:
+                    if alert["id"] in self.active_alerts:
+                        del self.active_alerts[alert["id"]]
+
+                self.active_alerts[aggregated["id"]] = aggregated
+
+        except Exception as e:
+            self.logger.error(f"Error aggregating DEX alerts: {str(e)}")
+
+    async def _aggregate_cross_dex_alerts(self, alerts: List[Dict]):
+        """Aggregate cross-DEX alerts"""
+        try:
+            pairs = {}
+            for alert in alerts:
+                pair = alert["metadata"].get("token_pair", "unknown")
+                if pair not in pairs:
+                    pairs[pair] = []
+                pairs[pair].append(alert)
+
+            for pair, pair_alerts in pairs.items():
+                # Calculate cross-DEX metrics
+                spread_score = float(np.mean([float(a["metadata"].get("spread_bps", 0)) / 100 for a in pair_alerts]))
+                arbitrage_score = float(np.mean([float(a["metadata"].get("arbitrage_opportunity", 0)) for a in pair_alerts]))
+                risk_score = float(self._calculate_cross_dex_risk_score(pair_alerts))
+
+                aggregated = {
+                    "id": f"cross_dex_{pair}_{datetime.now().strftime('%Y%m%d%H%M')}",
+                    "level": self._determine_cross_dex_alert_level(spread_score, arbitrage_score, risk_score),
+                    "category": AlertCategory.CROSS_DEX,
+                    "message": f"Cross-DEX {pair} - Spread: {spread_score:.2f}%, Arbitrage: {arbitrage_score:.2f}, Risk: {risk_score:.2f}",
+                    "timestamp": datetime.now(),
+                    "state": AlertState.ACTIVE,
+                    "aggregated": True,
+                    "alerts": pair_alerts,
+                    "metadata": {
+                        "token_pair": pair,
+                        "spread_score": spread_score,
+                        "arbitrage_score": arbitrage_score,
+                        "risk_score": risk_score
+                    }
+                }
+
+                # Replace original alerts
+                for alert in pair_alerts:
+                    if alert["id"] in self.active_alerts:
+                        del self.active_alerts[alert["id"]]
+
+                self.active_alerts[aggregated["id"]] = aggregated
+
+        except Exception as e:
+            self.logger.error(f"Error aggregating cross-DEX alerts: {str(e)}")
+
+    def _merge_alert_metadata(self, alerts: List[Dict]) -> Dict:
+        """Merge metadata from multiple alerts"""
+        try:
+            merged = {}
+            for alert in alerts:
+                for key, value in alert.get("metadata", {}).items():
+                    if key not in merged:
+                        merged[key] = []
+                    if value not in merged[key]:
+                        merged[key].append(value)
+            return merged
+        except Exception as e:
+            self.logger.error(f"Error merging alert metadata: {str(e)}")
+            return {}
 
     async def _send_notifications(self):
         """发送通知"""
@@ -319,9 +549,20 @@ class AlertManager:
                 await self._send_slack_notification(alert)
             elif channel == "sms":
                 await self._send_sms_notification(alert)
+            elif channel == "immediate":
+                await self._send_immediate_notification(alert)
 
         except Exception as e:
             self.logger.error(f"Error sending {channel} notification: {str(e)}")
+
+    async def _send_immediate_notification(self, alert: Dict):
+        """Send immediate notification for critical alerts"""
+        try:
+            channels = ["email", "sms", "slack"]
+            for channel in channels:
+                await self._send_notification(alert, channel)
+        except Exception as e:
+            self.logger.error(f"Error sending immediate notification: {str(e)}")
 
     async def _send_email_notification(self, alert: Dict):
         """发送邮件通知"""
@@ -982,7 +1223,7 @@ class AlertManager:
         ]
 
     def _calculate_avg_escalation_time(self) -> float:
-        """计算平均升级时间"""
+        """Calculate average escalation time"""
         if not self.escalation_history:
             return 0
 
@@ -995,3 +1236,133 @@ class AlertManager:
         )
 
         return total_time / len(self.escalation_history)
+
+    def _calculate_meme_risk_score(self, alerts: List[Dict]) -> float:
+        """Calculate risk score for meme token alerts"""
+        if not alerts:
+            return 0.0
+
+        weights = {
+            "volume": 0.3,
+            "holders": 0.2,
+            "sentiment": 0.3,
+            "virality": 0.2
+        }
+
+        scores = []
+        for alert in alerts:
+            metrics = alert.get("metadata", {})
+            score = 0.0
+            
+            if "volume_change" in metrics:
+                score += weights["volume"] * min(abs(float(metrics["volume_change"])) / 100, 1.0)
+            if "holders_change" in metrics:
+                score += weights["holders"] * min(abs(float(metrics["holders_change"])) / 50, 1.0)
+            if "sentiment_score" in metrics:
+                score += weights["sentiment"] * (1 - float(metrics["sentiment_score"]))
+            if "viral_coefficient" in metrics:
+                score += weights["virality"] * min(float(metrics["viral_coefficient"]) / 2, 1.0)
+            
+            scores.append(score)
+
+        return float(np.mean(scores))
+
+    def _calculate_dex_risk_score(self, alerts: List[Dict]) -> float:
+        """Calculate risk score for DEX alerts"""
+        if not alerts:
+            return 0.0
+
+        weights = {
+            "liquidity": 0.4,
+            "slippage": 0.3,
+            "execution": 0.3
+        }
+
+        scores = []
+        for alert in alerts:
+            metrics = alert.get("metadata", {})
+            score = 0.0
+            
+            if "liquidity_ratio" in metrics:
+                score += weights["liquidity"] * (1 - float(metrics["liquidity_ratio"]))
+            if "slippage" in metrics:
+                score += weights["slippage"] * min(float(metrics["slippage"]) / 0.05, 1.0)
+            if "execution_time" in metrics:
+                score += weights["execution"] * min(float(metrics["execution_time"]) / 5.0, 1.0)
+            
+            scores.append(score)
+
+        return float(np.mean(scores))
+
+    def _calculate_cross_dex_risk_score(self, alerts: List[Dict]) -> float:
+        """Calculate risk score for cross-DEX alerts"""
+        if not alerts:
+            return 0.0
+
+        weights = {
+            "spread": 0.5,
+            "liquidity_imbalance": 0.3,
+            "execution_risk": 0.2
+        }
+
+        scores = []
+        for alert in alerts:
+            metrics = alert.get("metadata", {})
+            score = 0.0
+            
+            if "spread_bps" in metrics:
+                score += weights["spread"] * min(float(metrics["spread_bps"]) / 100, 1.0)
+            if "liquidity_imbalance" in metrics:
+                score += weights["liquidity_imbalance"] * min(float(metrics["liquidity_imbalance"]), 1.0)
+            if "execution_risk" in metrics:
+                score += weights["execution_risk"] * float(metrics["execution_risk"])
+            
+            scores.append(score)
+
+        return float(np.mean(scores))
+
+    def _determine_meme_alert_level(self, risk_score: float) -> AlertLevel:
+        """Determine alert level based on meme token risk score"""
+        if risk_score >= 0.8:
+            return AlertLevel.CRITICAL
+        elif risk_score >= 0.6:
+            return AlertLevel.ERROR
+        elif risk_score >= 0.4:
+            return AlertLevel.WARNING
+        return AlertLevel.INFO
+
+    def _determine_dex_alert_level(
+        self, liquidity_score: float, execution_score: float, reliability_score: float
+    ) -> AlertLevel:
+        """Determine alert level based on DEX metrics"""
+        risk_score = (
+            liquidity_score * 0.4 + 
+            execution_score * 0.3 + 
+            reliability_score * 0.3
+        )
+        
+        if risk_score >= 0.8:
+            return AlertLevel.CRITICAL
+        elif risk_score >= 0.6:
+            return AlertLevel.ERROR
+        elif risk_score >= 0.4:
+            return AlertLevel.WARNING
+        return AlertLevel.INFO
+
+    def _determine_cross_dex_alert_level(
+        self, spread_score: float, arbitrage_score: float, risk_score: float
+    ) -> AlertLevel:
+        """Determine alert level based on cross-DEX metrics"""
+        total_score = (
+            spread_score * 0.4 + 
+            arbitrage_score * 0.3 + 
+            risk_score * 0.3
+        )
+        
+        if total_score >= 0.8:
+            return AlertLevel.CRITICAL
+        elif total_score >= 0.6:
+            return AlertLevel.ERROR
+        elif total_score >= 0.4:
+            return AlertLevel.WARNING
+        return AlertLevel.INFO

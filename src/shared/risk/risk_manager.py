@@ -805,6 +805,10 @@ class RiskManager:
             "timestamp": current_time,
             "source": "live",
             "is_meme": is_meme,
+            "dex_liquidity": params.get("dex_liquidity", {}),
+            "total_liquidity": float(params.get("total_liquidity", params["liquidity"])),
+            "cross_dex_spread": float(params.get("cross_dex_spread", params["spread"])),
+            "volume_24h": float(params.get("volume_24h", params["volume"])),
         }
 
         if market_data["price"] <= 0:
@@ -925,18 +929,30 @@ class RiskManager:
                 }
             )
 
-        min_liquidity = self.config.MIN_LIQUIDITY * (
-            0.4 if is_meme else 0.8
-        )  # Higher liquidity requirements
-        if market_data["liquidity"] < min_liquidity:
-            if (
-                market_data["liquidity"] < min_liquidity * 0.5
-            ):  # Reject extremely low liquidity
+        base_min_liquidity = self.config.MIN_LIQUIDITY * (0.4 if is_meme else 0.8)
+        volatility_factor = max(1.0, market_data["volatility"] / self.config.VOLATILITY_SCALE_THRESHOLD)
+        volume_factor = min(1.0, market_data["volume_24h"] / (position_value * 100))
+        min_liquidity = base_min_liquidity * volatility_factor / volume_factor
+        total_liquidity = market_data["total_liquidity"]
+        dex_liquidity = market_data["dex_liquidity"]
+        cross_dex_spread = market_data["cross_dex_spread"]
+        
+        liquidity_distribution = 1.0
+        if dex_liquidity:
+            liquidity_values = list(dex_liquidity.values())
+            max_liquidity = max(liquidity_values)
+            min_liquidity_dex = min(liquidity_values)
+            liquidity_distribution = min_liquidity_dex / max_liquidity if max_liquidity > 0 else 0
+
+        if total_liquidity < min_liquidity:
+            if total_liquidity < min_liquidity * 0.5:
                 return {
                     "is_valid": False,
-                    "reason": "Insufficient liquidity - trade rejected",
+                    "reason": "Insufficient cross-DEX liquidity - trade rejected",
                     "recommendations": [
-                        f"Current liquidity ({market_data['liquidity']:.0f}) below minimum ({min_liquidity * 0.5:.0f})",
+                        f"Total liquidity ({total_liquidity:.0f}) below minimum ({min_liquidity * 0.5:.0f})",
+                        f"DEX Distribution: {', '.join(f'{dex}: {liq:.0f}' for dex, liq in dex_liquidity.items())}",
+                        f"Cross-DEX spread: {cross_dex_spread:.4%}",
                         "Wait for higher market liquidity",
                         "Consider major trading pairs",
                     ],
@@ -945,53 +961,83 @@ class RiskManager:
                     "expected_slippage": expected_slippage,
                     "market_conditions_alignment": 0.1,
                 }
-            liq_scale = max(0.3, market_data["liquidity"] / min_liquidity)
+            liq_scale = max(0.3, total_liquidity / min_liquidity) * liquidity_distribution
             position_scale *= liq_scale
-            market_conditions.append(
-                {
-                    "condition": "liquidity",
-                    "status": "warning",
-                    "message": f"Low liquidity - position scaled to {liq_scale:.0%}",
-                    "scale": liq_scale,
-                }
+            market_conditions.append({
+                "condition": "liquidity",
+                "status": "warning",
+                "message": (
+                    f"Low liquidity - position scaled to {liq_scale:.0%}\n"
+                    f"Distribution score: {liquidity_distribution:.2%}"
+                ),
+                "scale": liq_scale,
+            }
             )
 
         position_value = float(params["amount"]) * market_data["price"]
-        base_min_volume = position_value * 5  # Higher base volume requirement
-        volatility_factor = max(
-            0.7, market_data["volatility"] / 2.0
-        )  # Stricter volatility scaling
-        min_volume = base_min_volume * volatility_factor
+        
+        # Enhanced volume validation with time-weighted factors
+        base_min_volume = position_value * 5
+        volatility_factor = max(0.7, market_data["volatility"] / self.config.VOLATILITY_SCALE_THRESHOLD)
+        volume_24h = market_data["volume_24h"]
+        current_volume = market_data["volume"]
+        
+        # Calculate volume trend
+        volume_ratio = current_volume / volume_24h if volume_24h > 0 else 0
+        trend_factor = max(0.5, min(1.5, volume_ratio * 24))  # Scale based on hourly average
+        
+        min_volume = base_min_volume * volatility_factor * trend_factor
         if is_meme:
-            min_volume *= 2.0  # Much higher volume requirement for meme coins
-
-        if market_data["volume"] < min_volume:
-            if market_data["volume"] < min_volume * 0.4:  # Reject extremely low volume
+            min_volume *= 2.0  # Higher requirement for meme coins
+            
+        # Comprehensive volume validation
+        if current_volume < min_volume:
+            if current_volume < min_volume * 0.4:  # Critical volume threshold
+                volume_analysis = {
+                    "current": current_volume,
+                    "24h": volume_24h,
+                    "ratio": volume_ratio,
+                    "trend": trend_factor,
+                    "required": min_volume,
+                }
                 return {
                     "is_valid": False,
-                    "reason": "Insufficient trading volume - trade rejected",
+                    "reason": "Critical volume condition - trade rejected",
                     "recommendations": [
-                        f"Current volume ({market_data['volume']:.0f}) below minimum ({min_volume * 0.4:.0f})",
-                        "Wait for higher market activity",
-                        "Consider major trading pairs",
-                        f"Required volume: {min_volume:.0f}",
+                        f"Current volume ({current_volume:.0f}) below critical threshold ({min_volume * 0.4:.0f})",
+                        f"24h Volume: {volume_24h:.0f}",
+                        f"Volume trend factor: {trend_factor:.2f}",
+                        f"Required base volume: {min_volume:.0f}",
+                        "Wait for increased market activity",
+                        "Consider trading during peak hours",
                     ],
                     "market_data": market_data,
                     "market_impact": market_impact,
                     "expected_slippage": expected_slippage,
                     "market_conditions_alignment": 0.1,
                 }
-            vol_scale = max(
-                0.3, market_data["volume"] / min_volume
-            )  # Stricter volume scaling
+            # Dynamic volume-based position scaling
+            base_scale = max(0.3, current_volume / min_volume)
+            trend_adjustment = max(0.5, trend_factor)
+            vol_scale = base_scale * trend_adjustment
+            
             position_scale *= vol_scale
-            market_conditions.append(
-                {
-                    "condition": "volume",
-                    "status": "warning",
-                    "message": f"Low volume - position scaled to {vol_scale:.0%}",
-                    "scale": vol_scale,
+            market_conditions.append({
+                "condition": "volume",
+                "status": "warning",
+                "message": (
+                    f"Low volume - position scaled to {vol_scale:.0%}\n"
+                    f"Volume trend: {trend_factor:.2f}x average\n"
+                    f"24h volume: {volume_24h:.0f}"
+                ),
+                "scale": vol_scale,
+                "metrics": {
+                    "current_volume": current_volume,
+                    "min_volume": min_volume,
+                    "trend_factor": trend_factor,
+                    "volume_ratio": volume_ratio
                 }
+            }
             )
 
         max_spread = self.config.MAX_SLIPPAGE * (3.0 if is_meme else 2.0)
