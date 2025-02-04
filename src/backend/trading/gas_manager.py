@@ -1,11 +1,12 @@
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict
 
 import numpy as np
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import Counter, Gauge
 
 
 class GasPriority(Enum):
@@ -33,6 +34,7 @@ class GasManager:
         self.gas_history = []
         self.fee_estimates = {}
         self.pending_txs = {}
+        self.logger = logging.getLogger(__name__)
 
         # Gas指标
         self.metrics = GasMetrics(
@@ -94,6 +96,19 @@ class GasManager:
             except Exception as e:
                 self.logger.error(f"Error in gas monitoring: {str(e)}")
                 await asyncio.sleep(1)
+
+    async def _get_latest_block_info(self) -> Dict:
+        """获取最新区块信息"""
+        try:
+            # 模拟获取区块信息，实际实现需要连接到区块链节点
+            return {
+                "number": len(self.gas_history) + 1,
+                "base_fee_per_gas": 50.0,
+                "timestamp": time.time(),
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting latest block info: {str(e)}")
+            return {"number": 0, "base_fee_per_gas": 50.0, "timestamp": time.time()}
 
     async def _update_gas_prices(self):
         """更新Gas价格"""
@@ -177,7 +192,7 @@ class GasManager:
                 ]
             )
 
-            return congestion_score
+            return float(congestion_score)
 
         except Exception as e:
             self.logger.error(f"Error calculating network congestion: {str(e)}")
@@ -198,11 +213,45 @@ class GasManager:
                     await self._accelerate_transaction(tx_hash, new_fees)
 
                 # 检查是否可以取消重发
-                elif self._should_resubmit_transaction(tx_info):
+                elif await self._should_resubmit_transaction(tx_info):
                     await self._resubmit_transaction(tx_hash, tx_info)
 
         except Exception as e:
             self.logger.error(f"Error optimizing pending transactions: {str(e)}")
+
+    async def _accelerate_transaction(self, tx_hash: str, new_fees: Dict) -> None:
+        """加速交易"""
+        try:
+            # 模拟加速交易，实际实现需要连接到区块链节点
+            self.pending_txs[tx_hash]["fees"] = new_fees
+            self.pending_txs[tx_hash]["accelerated"] = True
+            self.logger.info(f"Transaction {tx_hash} accelerated with new fees: {new_fees}")
+        except Exception as e:
+            self.logger.error(f"Error accelerating transaction {tx_hash}: {str(e)}")
+
+    async def _should_resubmit_transaction(self, tx_info: Dict) -> bool:
+        """判断是否需要重新提交交易"""
+        try:
+            # 检查交易是否已经被加速过但仍未确认
+            if tx_info.get("accelerated", False):
+                wait_time = time.time() - tx_info["submit_time"]
+                return wait_time > tx_info.get("max_wait_time", 300)
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking transaction resubmission: {str(e)}")
+            return False
+
+    async def _resubmit_transaction(self, tx_hash: str, tx_info: Dict) -> None:
+        """重新提交交易"""
+        try:
+            # 模拟重新提交交易，实际实现需要连接到区块链节点
+            new_tx_info = tx_info.copy()
+            new_tx_info["submit_time"] = time.time()
+            new_tx_info["accelerated"] = False
+            self.pending_txs[tx_hash] = new_tx_info
+            self.logger.info(f"Transaction {tx_hash} resubmitted")
+        except Exception as e:
+            self.logger.error(f"Error resubmitting transaction {tx_hash}: {str(e)}")
 
     def _should_accelerate_transaction(self, tx_info: Dict) -> bool:
         """判断是否需要加速交易"""

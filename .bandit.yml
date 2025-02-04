@@ -1,0 +1,17 @@
+exclude_dirs:
+  - venv
+  - .git
+  - __pycache__
+
+skips:
+  - B101  # Skip assert used warnings in test files
+  - B404  # Import subprocess warning
+  - B603  # subprocess call - check for shell injection
+  - B607  # Start process with partial path
+
+per_file_ignores:
+  - "**/tests/*_test.py": ["B101"]
+  - "**/tests/test_*.py": ["B101"]
+  - "**/tests/e2e/*.py": ["B101"]
+  - "**/tests/unit/*.py": ["B101"]
+  - "**/tests/integration/*.py": ["B101"]

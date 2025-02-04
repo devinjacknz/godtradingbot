@@ -1,6 +1,5 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 import httpx
-from datetime import datetime
 
 
 class OllamaModel:

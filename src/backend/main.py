@@ -1,22 +1,21 @@
 import logging
 from datetime import datetime
-
-import logging
-from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 
-from .config import settings
-from .database import (
+from src.backend.config import settings
+from src.backend.database import (
     Account,
     Agent,
     AgentStatus,
+    LimitSettings,
+    Order,
     Position,
+    RiskMetrics,
     Signal,
     Strategy,
     Trade,
@@ -26,15 +25,22 @@ from .database import (
     init_db,
     init_mongodb,
 )
-from .schemas import (
+from src.backend.schemas import (
     AccountBase,
     AccountResponse,
+    AgentListResponse,
     AgentResponse,
+    LimitSettingsResponse,
+    LimitSettingsUpdate,
     MarketData,
+    OrderCreate,
+    OrderListResponse,
+    OrderResponse,
     PerformanceResponse,
     PositionBase,
     PositionListResponse,
     PositionResponse,
+    RiskMetricsResponse,
     SignalCreate,
     SignalListResponse,
     SignalResponse,
@@ -45,11 +51,14 @@ from .schemas import (
     TradeListResponse,
     TradeResponse,
 )
-from .shared.models.ollama import OllamaModel
-from .websocket import (
+from src.backend.shared.models.ollama import OllamaModel
+from src.backend.websocket import (
     broadcast_agent_status,
+    broadcast_limit_update,
+    broadcast_order_update,
     broadcast_performance_update,
     broadcast_position_update,
+    broadcast_risk_update,
     broadcast_signal,
     broadcast_trade_update,
     handle_websocket_connection,
@@ -420,6 +429,17 @@ async def create_strategy(
         raise HTTPException(status_code=500, detail="Failed to create strategy")
 
 
+@app.get("/api/v1/agents", response_model=AgentListResponse)
+async def list_agents(db: Session = Depends(get_db)) -> AgentListResponse:
+    try:
+        agents = db.query(Agent.type).distinct().all()
+        agent_types = [agent[0] for agent in agents]
+        return AgentListResponse(agents=agent_types, count=len(agent_types))
+    except Exception as e:
+        logger.error(f"Error fetching agents: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch agents")
+
+
 @app.get("/api/v1/agents/{agent_type}/status", response_model=AgentResponse)
 async def get_agent_status(
     agent_type: str, db: Session = Depends(get_db)
@@ -664,6 +684,9 @@ async def get_performance(db: Session = Depends(get_db)) -> PerformanceResponse:
         raise HTTPException(
             status_code=500, detail="Failed to calculate performance metrics"
         )
+
+
+
 
 
 if __name__ == "__main__":
