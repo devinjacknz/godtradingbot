@@ -77,20 +77,63 @@ class RiskManagerAgent(BaseAgent):
 
     async def evaluate_risk(self, order) -> Dict[str, Any]:
         """Evaluate trading risk for a given order."""
-        prompt = f"""Analyze trading risk for:
-        Symbol: {order.symbol}
-        Size: {order.size}
-        Leverage: {order.leverage}
-        Price: {order.price}
-        
-        Output JSON with risk_score (0-100), max_position, and recommendation."""
-
         try:
-            result = await self.model.generate(prompt)
-            return result
+            return await self.analyze_position_risk(Position(
+                symbol=order.symbol,
+                size=order.size,
+                entry_price=order.price,
+                current_price=order.price,
+                leverage=order.leverage
+            ))
         except Exception as e:
             logging.error(f"Risk evaluation failed: {str(e)}")
-            return None
+            return {"risk_score": 0.75, "recommendation": "Error evaluating risk"}
+
+    async def analyze_position_risk(self, position: Position) -> Dict[str, Any]:
+        """Analyze position risk using AI model.
+        
+        Args:
+            position: Position object containing trade details
+            
+        Returns:
+            Dict containing risk assessment metrics
+        """
+        prompt = f"""分析持仓风险 / Analyze Position Risk:
+
+交易信息 / Trade Details:
+- 交易对 / Symbol: {position.symbol}
+- 持仓量 / Size: {position.size}
+- 开仓价 / Entry Price: {position.entry_price}
+- 当前价 / Current Price: {position.current_price}
+- 杠杆率 / Leverage: {position.leverage}
+
+请以JSON格式提供风险评估 / Provide risk assessment in JSON format:
+{{
+    "risk_score": float,  # 0-1 风险评分
+    "liquidation_risk": float,  # 0-1 清算风险
+    "volatility_risk": float,  # 0-1 波动风险
+    "position_size_risk": float,  # 0-1 仓位规模风险
+    "recommendations": [string],  # 风险管理建议
+    "reasoning": string  # 分析理由
+}}"""
+
+        try:
+            result = await self.fallback_manager.execute(prompt)
+            if not result:
+                raise ValueError("No result from model")
+                
+            return result
+        except Exception as e:
+            logging.error(f"Position risk analysis failed: {str(e)}")
+            # Fallback to basic risk calculation
+            return {
+                "risk_score": 0.75,
+                "liquidation_risk": 0.5,
+                "volatility_risk": 0.5,
+                "position_size_risk": min(1.0, position.size / self.max_position_size),
+                "recommendations": ["Consider reducing position size"],
+                "reasoning": "Fallback risk calculation due to model error"
+            }
 
     async def check_position_limits(self, position) -> Dict[str, Any]:
         """Check if position size is within configured limits."""
@@ -112,27 +155,46 @@ class RiskManagerAgent(BaseAgent):
 
     async def evaluate_risks(self, orders) -> List[Dict[str, Any]]:
         """Evaluate risks for multiple orders in batch."""
-        prompts = [
-            f"""Evaluate risk for order:
-            Symbol: {order.symbol}
-            Size: {order.size}
-            Leverage: {order.leverage}
-            Price: {order.price}
-            
-            Output JSON with risk_score and recommendation."""
-            for order in orders
+        positions = [
+            Position(
+                symbol=order.symbol,
+                size=order.size,
+                entry_price=order.price,
+                current_price=order.price,
+                leverage=order.leverage
+            ) for order in orders
         ]
 
         try:
-            results = await self.model.generate_batch(prompts)
-            return (
-                results
-                if results
-                else [{"risk_score": 75, "recommendation": "adjust"} for _ in orders]
+            results = await asyncio.gather(
+                *[self.analyze_position_risk(position) for position in positions],
+                return_exceptions=True
             )
+            
+            return [
+                result if not isinstance(result, Exception) else {
+                    "risk_score": 0.75,
+                    "liquidation_risk": 0.5,
+                    "volatility_risk": 0.5,
+                    "position_size_risk": min(1.0, position.size / self.max_position_size),
+                    "recommendations": ["Consider reducing position size"],
+                    "reasoning": f"Error in risk analysis: {str(result)}"
+                }
+                for result, position in zip(results, positions)
+            ]
         except Exception as e:
             logging.error(f"Batch risk evaluation failed: {str(e)}")
-            return [{"risk_score": 75, "recommendation": "adjust"} for _ in orders]
+            return [
+                {
+                    "risk_score": 0.75,
+                    "liquidation_risk": 0.5,
+                    "volatility_risk": 0.5,
+                    "position_size_risk": min(1.0, position.size / self.max_position_size),
+                    "recommendations": ["Consider reducing position size"],
+                    "reasoning": "Batch processing error"
+                }
+                for position in positions
+            ]
 
     async def calculate_position_size(
         self, symbol: str, price: float, risk_factor: float, leverage: float = 1.0
@@ -305,64 +367,65 @@ class RiskManagerAgent(BaseAgent):
         if not position:
             raise ValueError("Invalid position")
 
-        notional_value = position.size * position.current_price
-        margin_required = (
-            notional_value / position.leverage
-            if hasattr(position, "leverage")
-            else notional_value
-        )
+        try:
+            # Get AI-driven risk assessment
+            risk_analysis = await self.analyze_position_risk(position)
+            
+            # Calculate traditional metrics
+            notional_value = position.size * position.current_price
+            margin_required = (
+                notional_value / position.leverage
+                if hasattr(position, "leverage")
+                else notional_value
+            )
+            liquidation_price = (
+                position.entry_price * (1 - self.min_margin_ratio)
+                if position.entry_price > 0
+                else 0
+            )
+            margin_ratio = (
+                (position.current_price - liquidation_price) / position.current_price
+                if position.current_price > 0
+                else 0
+            )
 
-        liquidation_price = (
-            position.entry_price * (1 - self.min_margin_ratio)
-            if position.entry_price > 0
-            else 0
-        )
-        margin_ratio = (
-            (position.current_price - liquidation_price) / position.current_price
-            if position.current_price > 0
-            else 0
-        )
-
-        # Calculate volatility-based risk score with aggressive scaling
-        price_change = (
-            abs(position.current_price - position.entry_price) / position.entry_price
-        )
-        volatility_risk = min(
-            1.0, price_change * 15
-        )  # Higher scaling for test requirements
-
-        # Calculate position size risk with aggressive weight
-        size_risk = min(1.0, notional_value / self.max_position_size * 2.0)
-
-        # Calculate leverage risk with extreme penalty
-        leverage_risk = (
-            min(1.0, (position.leverage / self.max_leverage) * 3.0)
-            if hasattr(position, "leverage")
-            else 0.5
-        )
-
-        # Combined risk score with aggressive weights and higher scaling
-        risk_score = min(
-            1.0,
-            max(
-                0.0,
-                (
-                    0.8 * volatility_risk  # Even more dominant weight on volatility
-                    + 0.15 * leverage_risk
-                    + 0.05 * size_risk
-                )
-                * 2.0,  # Much higher overall scaling
-            ),
-        )
-
-        return {
-            "risk_score": risk_score,
-            "margin_ratio": margin_ratio,
-            "liquidation_price": liquidation_price,
-            "notional_value": notional_value,
-            "margin_required": margin_required,
-            "volatility_risk": volatility_risk,
-        }
+            return {
+                "risk_score": risk_analysis.get("risk_score", 0.75),
+                "margin_ratio": margin_ratio,
+                "liquidation_price": liquidation_price,
+                "notional_value": notional_value,
+                "margin_required": margin_required,
+                "volatility_risk": risk_analysis.get("volatility_risk", 0.5),
+                "liquidation_risk": risk_analysis.get("liquidation_risk", 0.5),
+                "position_size_risk": risk_analysis.get("position_size_risk", 0.5),
+                "recommendations": risk_analysis.get("recommendations", ["Consider reducing position size"]),
+                "reasoning": risk_analysis.get("reasoning", "Fallback risk calculation")
+            }
+        except Exception as e:
+            logging.error(f"Position risk assessment failed: {str(e)}")
+            # Fallback to basic risk calculation
+            price_change = abs(position.current_price - position.entry_price) / position.entry_price
+            volatility_risk = min(1.0, price_change * 15)
+            size_risk = min(1.0, notional_value / self.max_position_size * 2.0)
+            leverage_risk = (
+                min(1.0, (position.leverage / self.max_leverage) * 3.0)
+                if hasattr(position, "leverage")
+                else 0.5
+            )
+            risk_score = min(1.0, max(0.0, (0.8 * volatility_risk + 0.15 * leverage_risk + 0.05 * size_risk) * 2.0))
+            
+            return {
+                "risk_score": risk_score,
+                "margin_ratio": margin_ratio,
+                "liquidation_price": liquidation_price,
+                "notional_value": notional_value,
+                "margin_required": margin_required,
+                "volatility_risk": volatility_risk,
+                "liquidation_risk": leverage_risk,
+                "position_size_risk": size_risk,
+                "recommendations": ["Consider reducing position size"],
+                "reasoning": "Fallback calculation due to AI analysis failure"
+            }
 
     async def assess_portfolio_risk(self, portfolio: Portfolio) -> Dict[str, Any]:
         """Assess risk metrics for the entire portfolio."""
