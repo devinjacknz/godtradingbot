@@ -62,6 +62,15 @@ Before setting up the application, ensure you have the following installed:
 - `GET /api/v1/orders` - List all orders
 - `GET /api/v1/orders/{order_id}` - Get specific order details
 
+### Agent Management
+- `POST /api/v1/agents` - Create new trading agent
+- `GET /api/v1/agents` - List all agents
+- `GET /api/v1/agents/{agent_id}` - Get agent details
+- `PUT /api/v1/agents/{agent_id}` - Update agent configuration
+- `DELETE /api/v1/agents/{agent_id}` - Delete agent
+- `POST /api/v1/agents/{agent_id}/start` - Start agent
+- `POST /api/v1/agents/{agent_id}/stop` - Stop agent
+
 ### Account Management
 - `GET /api/v1/account/balance` - Get account balance
 - `GET /api/v1/account/positions` - Get all positions
