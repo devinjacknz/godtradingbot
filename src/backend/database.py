@@ -21,7 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
-from .config import settings
+from config import settings
 
 # Create SQLAlchemy engine with configured DATABASE_URL
 engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
@@ -178,7 +178,6 @@ class Account(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "accounts"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, nullable=False)
     balance = Column(Float, nullable=False, default=0.0)
     created_at: Column[datetime] = Column(DateTime, default=datetime.utcnow)
     updated_at: Column[datetime] = Column(
@@ -190,7 +189,6 @@ class Account(Base):  # type: ignore[misc, valid-type]
     def model_dump(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "user_id": self.user_id,
             "balance": self.balance,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -201,7 +199,6 @@ class Position(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "positions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, nullable=False)
     symbol = Column(String, nullable=False)
     direction = Column(String, nullable=False)
     size = Column(Float, nullable=False)
@@ -218,7 +215,6 @@ class Position(Base):  # type: ignore[misc, valid-type]
     def model_dump(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "user_id": self.user_id,
             "symbol": self.symbol,
             "direction": self.direction,
             "size": self.size,
@@ -234,7 +230,6 @@ class Order(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, nullable=False)
     symbol = Column(String, nullable=False)
     order_type = Column(String, nullable=False)
     direction = Column(String, nullable=False)
@@ -251,7 +246,6 @@ class Order(Base):  # type: ignore[misc, valid-type]
     def model_dump(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "user_id": self.user_id,
             "symbol": self.symbol,
             "order_type": self.order_type,
             "direction": self.direction,
@@ -267,7 +261,6 @@ class RiskMetrics(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "risk_metrics"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, nullable=False)
     total_exposure = Column(Float, nullable=False, default=0.0)
     margin_used = Column(Float, nullable=False, default=0.0)
     margin_ratio = Column(Float, nullable=False, default=0.0)
@@ -283,7 +276,6 @@ class RiskMetrics(Base):  # type: ignore[misc, valid-type]
     def model_dump(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "user_id": self.user_id,
             "total_exposure": self.total_exposure,
             "margin_used": self.margin_used,
             "margin_ratio": self.margin_ratio,
@@ -298,7 +290,6 @@ class LimitSettings(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "limit_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, nullable=False)
     max_position_size = Column(Float, nullable=False)
     max_daily_loss = Column(Float, nullable=False)
     max_leverage = Column(Float, nullable=False)
@@ -313,7 +304,6 @@ class LimitSettings(Base):  # type: ignore[misc, valid-type]
     def model_dump(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "user_id": self.user_id,
             "max_position_size": self.max_position_size,
             "max_daily_loss": self.max_daily_loss,
             "max_leverage": self.max_leverage,

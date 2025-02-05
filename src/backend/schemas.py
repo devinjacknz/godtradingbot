@@ -82,7 +82,6 @@ class StrategyResponse(StrategyBase):
 # Agent Schemas
 class AgentBase(BaseModel):
     type: str
-    status: str = Field(..., pattern="^(running|stopped|error)$")
 
 
 class AgentCreate(AgentBase):

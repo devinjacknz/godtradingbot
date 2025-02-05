@@ -80,7 +80,6 @@ Status: Verified Working
 - Returns list of available trading strategies
 
 ### POST /api/v1/strategies
-- Requires authentication
 - Creates new trading strategy
 - Request body:
 ```json
@@ -91,6 +90,109 @@ Status: Verified Working
     "status": "active|inactive"
 }
 ```
+
+## Agent Management ✓
+Status: Verified Working (2025-02-05)
+
+### POST /api/v1/agents
+Creates a new trading agent
+- Request body:
+```json
+{
+    "type": "string"  // Type of the agent to create
+}
+```
+- Response:
+```json
+{
+    "type": "string",
+    "id": "integer",
+    "last_updated": "datetime"
+}
+```
+- Notes:
+  - Creates new agent with default status "stopped"
+  - No authentication required
+  - Returns agent details with creation timestamp
+
+### DELETE /api/v1/agents/{agent_type}
+Deletes an existing trading agent
+- Parameters:
+  - agent_type: Type of the agent to delete (string)
+- Response:
+```json
+{
+    "type": "string",
+    "id": "integer",
+    "last_updated": "datetime"
+}
+```
+- Notes:
+  - Completely removes agent from the system
+  - Returns final state of agent before deletion
+
+### GET /api/v1/agents
+Lists all available trading agents
+- Response:
+```json
+{
+    "agents": ["string"],  // List of agent types
+    "count": "integer"     // Total number of agents
+}
+```
+- Notes:
+  - Returns array of all agent types
+  - Includes count for pagination/monitoring
+
+### GET /api/v1/agents/{agent_type}/status
+Gets the current status of a specific agent
+- Parameters:
+  - agent_type: Type of the agent to check (string)
+- Response:
+```json
+{
+    "type": "string",
+    "id": "integer",
+    "last_updated": "datetime"
+}
+```
+- Notes:
+  - Returns current agent state
+  - Creates agent with "stopped" status if not found
+
+### POST /api/v1/agents/{agent_type}/start
+Starts trading for a specific agent
+- Parameters:
+  - agent_type: Type of the agent to start (string)
+- Response:
+```json
+{
+    "type": "string",
+    "id": "integer",
+    "last_updated": "datetime"
+}
+```
+- Notes:
+  - Activates trading operations for agent
+  - Creates agent if not found
+  - Updates status to "running"
+
+### POST /api/v1/agents/{agent_type}/stop
+Stops trading for a specific agent
+- Parameters:
+  - agent_type: Type of the agent to stop (string)
+- Response:
+```json
+{
+    "type": "string",
+    "id": "integer",
+    "last_updated": "datetime"
+}
+```
+- Notes:
+  - Deactivates trading operations
+  - Updates status to "stopped"
+  - Safe to call multiple times
 
 ## WebSocket Endpoints
 Base WebSocket URL: `ws://127.0.0.1:8000`
