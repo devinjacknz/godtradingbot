@@ -22,19 +22,6 @@ Get current price from a specific DEX.
   - symbol: Trading pair symbol
 - Response: Current price and volume data
 
-### POST /api/v1/market/analyze
-Analyzes market data and provides trading signals.
-- Requires authentication
-- Request body:
-```json
-{
-    "symbol": "string",
-    "exchange": "string",
-    "timestamp": "string",
-    "price": "number",
-    "volume": "number",
-    "metadata": {}
-}
 ```
 
 ## Account Management

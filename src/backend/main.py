@@ -27,6 +27,7 @@ from .database import (
 )
 from .schemas import (
     AccountResponse,
+    AgentCreate,
     AgentListResponse,
     AgentResponse,
     LimitSettingsResponse,
@@ -49,9 +50,7 @@ from .schemas import (
     TradeListResponse,
     TradeResponse,
 )
-from .shared.models.ollama import OllamaModel
-from .websocket import (
-    broadcast_agent_status,
+
     broadcast_limit_update,
     broadcast_order_update,
     broadcast_performance_update,
@@ -184,11 +183,6 @@ async def websocket_performance(websocket: WebSocket) -> None:
     await handle_websocket_connection(websocket, "performance")
 
 
-@app.websocket("/ws/agent_status")
-async def websocket_agent_status(websocket: WebSocket) -> None:
-    await handle_websocket_connection(websocket, "agent_status")
-
-
 @app.websocket("/ws/analysis")
 async def websocket_analysis(websocket: WebSocket) -> None:
     await handle_websocket_connection(websocket, "analysis")
@@ -223,18 +217,7 @@ async def get_account_positions(
         positions = (
             db.query(Position).filter(Position.user_id == current_user["id"]).all()
         )
-        position_responses = [
-            PositionResponse(
-                **{k: v for k, v in p.__dict__.items() if not k.startswith("_")}
-            )
-            for p in positions
-        ]
-        positions_data = PositionListResponse(positions=position_responses)
 
-        for position in positions:
-            await broadcast_position_update(position.__dict__)
-
-        return positions_data
     except Exception as e:
         logger.error(f"Error fetching positions: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch positions")
@@ -321,17 +304,6 @@ async def get_risk_metrics(
             db.query(Position).filter(Position.user_id == current_user["id"]).all()
         )
 
-        # Calculate risk metrics
-        total_exposure = sum(
-            float(getattr(p, "size", 0)) * float(getattr(p, "current_price", 0))
-            for p in positions
-        )
-        margin_used = float(total_exposure) * 0.1  # Example: 10% margin requirement
-        margin_ratio = (
-            float(margin_used) / float(total_exposure) if total_exposure > 0 else 0.0
-        )
-        daily_pnl = sum(float(getattr(p, "unrealized_pnl", 0)) for p in positions)
-        total_pnl = float(daily_pnl)  # For simplicity, using same value
 
         # Create or update risk metrics
         risk_metrics = (
@@ -351,14 +323,6 @@ async def get_risk_metrics(
             )
             db.add(risk_metrics)
         else:
-            for attr, value in {
-                "total_exposure": total_exposure,
-                "margin_used": margin_used,
-                "margin_ratio": margin_ratio,
-                "daily_pnl": daily_pnl,
-                "total_pnl": total_pnl,
-            }.items():
-                setattr(risk_metrics, attr, value)
 
         db.commit()
         db.refresh(risk_metrics)
@@ -495,6 +459,36 @@ async def get_agent_status(
         raise HTTPException(status_code=500, detail="Failed to get agent status")
 
 
+@app.patch("/api/v1/agents/{agent_type}/status", response_model=AgentResponse)
+async def update_agent_status(
+    agent_type: str, status: AgentStatus, db: Session = Depends(get_db)
+) -> AgentResponse:
+    try:
+        if not agent_type:
+            raise HTTPException(status_code=400, detail="Agent type is required")
+
+        agent = db.query(Agent).filter(Agent.type == agent_type).first()
+        if not agent:
+            raise HTTPException(status_code=404, detail=f"Agent {agent_type} not found")
+
+        agent.status = status
+        agent.last_updated = datetime.utcnow()
+        try:
+            db.commit()
+            db.refresh(agent)
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error updating agent status: {db_error}")
+            raise HTTPException(status_code=500, detail="Failed to update agent status")
+
+        return agent
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating agent status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update agent status")
+
+
 @app.post("/api/v1/agents/{agent_type}/start", response_model=AgentResponse)
 async def start_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentResponse:
     try:
@@ -520,7 +514,6 @@ async def start_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentRe
             logger.error(f"Database error starting agent: {db_error}")
             raise HTTPException(status_code=500, detail="Failed to start agent")
 
-        await broadcast_agent_status(agent_type, "running")
         return agent
     except HTTPException:
         raise
@@ -553,13 +546,73 @@ async def stop_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentRes
             logger.error(f"Database error stopping agent: {db_error}")
             raise HTTPException(status_code=500, detail="Failed to stop agent")
 
-        await broadcast_agent_status(agent_type, "stopped")
         return agent
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error stopping agent: {e}")
         raise HTTPException(status_code=500, detail="Failed to stop agent")
+
+
+@app.post("/api/v1/agents", response_model=AgentResponse)
+async def create_agent(
+    agent: AgentCreate, db: Session = Depends(get_db)
+) -> AgentResponse:
+    try:
+        if not agent.type:
+            raise HTTPException(status_code=400, detail="Agent type is required")
+
+        existing_agent = db.query(Agent).filter(Agent.type == agent.type).first()
+        if existing_agent:
+            msg = f"Agent with type {agent.type} already exists"
+            raise HTTPException(status_code=409, detail=msg)
+
+        db_agent = Agent(type=agent.type, status=agent.status)
+        try:
+            db.add(db_agent)
+            db.commit()
+            db.refresh(db_agent)
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error creating agent: {db_error}")
+            raise HTTPException(status_code=500, detail="Failed to create agent")
+
+        return db_agent
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating agent: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create agent")
+
+
+@app.delete("/api/v1/agents/{agent_type}", response_model=AgentResponse)
+async def delete_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentResponse:
+    try:
+        if not agent_type:
+            raise HTTPException(status_code=400, detail="Agent type is required")
+
+        agent = db.query(Agent).filter(Agent.type == agent_type).first()
+        if not agent:
+            raise HTTPException(status_code=404, detail=f"Agent {agent_type} not found")
+
+        # Stop agent if running before deletion
+        if agent.status == AgentStatus.RUNNING:
+            agent.status = AgentStatus.STOPPED
+
+        try:
+            db.delete(agent)
+            db.commit()
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database error deleting agent: {db_error}")
+            raise HTTPException(status_code=500, detail="Failed to delete agent")
+
+        return agent
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting agent: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete agent")
 
 
 @app.get("/api/v1/trades", response_model=TradeListResponse)
