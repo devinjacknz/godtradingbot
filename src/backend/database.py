@@ -21,35 +21,45 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
-from src.backend.config import settings
+from .config import settings
 
 # Create SQLAlchemy engine with configured DATABASE_URL
 engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-mongodb_client = MongoClient(settings.MONGODB_URL)
-mongodb = mongodb_client.get_database()
-
-async_mongodb_client = AsyncIOMotorClient(settings.MONGODB_URL)
-async_mongodb = async_mongodb_client.get_database()
+try:
+    mongodb_client = MongoClient(settings.MONGODB_URL)
+    mongodb = mongodb_client.get_database()
+    async_mongodb_client = AsyncIOMotorClient(settings.MONGODB_URL)
+    async_mongodb = async_mongodb_client.get_database()
+except Exception as e:
+    print(f"Warning: MongoDB connection failed: {e}")
+    mongodb_client = None
+    mongodb = None
+    async_mongodb_client = None
+    async_mongodb = None
 
 
 def init_mongodb() -> bool:
+    if mongodb is None:
+        print("Warning: MongoDB not configured, skipping initialization")
+        return True
     try:
-        if "market_snapshots" not in mongodb.list_collection_names():
+        collections = mongodb.list_collection_names()
+        if "market_snapshots" not in collections:
             mongodb.create_collection("market_snapshots")
             mongodb.market_snapshots.create_index("symbol")
             mongodb.market_snapshots.create_index("timestamp")
 
-        if "technical_analysis" not in mongodb.list_collection_names():
+        if "technical_analysis" not in collections:
             mongodb.create_collection("technical_analysis")
             mongodb.technical_analysis.create_index("symbol")
             mongodb.technical_analysis.create_index("timestamp")
         return True
     except Exception as e:
-        print(f"Error initializing MongoDB: {e}")
-        return False
+        print(f"Warning: MongoDB initialization skipped: {e}")
+        return True  # Return True to allow system to start without MongoDB
 
 
 class TradeStatus(str, enum.Enum):
@@ -121,7 +131,7 @@ class Trade(Base):  # type: ignore[misc, valid-type]
             "symbol": self.symbol,
             "direction": self.direction,
             "entry_time": self.entry_time.isoformat(),
-            "exit_time": self.exit_time.isoformat() if self.exit_time else None,
+            "exit_time": self.exit_time.isoformat() if getattr(self, 'exit_time', None) is not None else None,
             "entry_price": self.entry_price,
             "exit_price": self.exit_price,
             "quantity": self.quantity,
