@@ -1,6 +1,9 @@
 from typing import Any, Dict
 
 
+"""Market analysis model implementation."""
+
+
 class OllamaModel:
     async def analyze_market(self, analysis_request: Dict[str, Any]) -> Dict[str, Any]:
         # Minimal implementation for local development

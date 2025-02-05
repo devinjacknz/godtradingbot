@@ -12,6 +12,7 @@ from .database import (
     Account,
     Agent,
     AgentStatus,
+    Base,
     LimitSettings,
     Order,
     Position,
@@ -21,8 +22,8 @@ from .database import (
     Trade,
     TradeStatus,
     async_mongodb,
+    engine,
     get_db,
-    init_db,
 )
 from .schemas import (
     AccountResponse,
@@ -98,7 +99,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event() -> None:
     try:
-        init_db()  # Initialize SQLite
+        Base.metadata.create_all(bind=engine)  # Initialize SQLite tables
     except Exception as e:
         logger.error(f"Database initialization error: {e}")
         # Continue even if database init fails

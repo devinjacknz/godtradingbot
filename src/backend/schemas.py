@@ -98,6 +98,11 @@ class AgentResponse(AgentBase):
 
 
 # Performance Schema
+
+
+"""Performance metrics response model."""
+
+
 class PerformanceResponse(BaseModel):
     total_trades: int
     profitable_trades: int
