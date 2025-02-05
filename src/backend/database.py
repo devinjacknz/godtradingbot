@@ -21,7 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
-from .config import settings
+from config import settings
 
 # Create SQLAlchemy engine with configured DATABASE_URL
 engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
@@ -178,7 +178,8 @@ class Account(Base):  # type: ignore[misc, valid-type]
     __tablename__ = "accounts"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, nullable=False)
+    username = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
     balance = Column(Float, nullable=False, default=0.0)
     created_at: Column[datetime] = Column(DateTime, default=datetime.utcnow)
     updated_at: Column[datetime] = Column(

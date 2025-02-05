@@ -1,14 +1,16 @@
 import logging
-from datetime import datetime
-from typing import Any, Dict
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-from .config import settings
-from .database import (
+from config import settings
+from database import (
     Account,
     Agent,
     AgentStatus,
@@ -25,7 +27,7 @@ from .database import (
     engine,
     get_db,
 )
-from .schemas import (
+from schemas import (
     AccountResponse,
     AgentCreate,
     AgentListResponse,
@@ -50,7 +52,7 @@ from .schemas import (
     TradeListResponse,
     TradeResponse,
 )
-
+from websocket import (
     broadcast_limit_update,
     broadcast_order_update,
     broadcast_performance_update,
@@ -61,21 +63,33 @@ from .schemas import (
     handle_websocket_connection,
 )
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
-        # In a real application, you would decode and verify the JWT token
-        # For now, we'll return a mock user
-        return {"id": "test_user", "username": "test"}
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        return {"id": username, "username": username}
+    except JWTError as e:
+        logger.error(f"JWT validation error: {e}")
+        raise credentials_exception
     except Exception as e:
         logger.error(f"Error authenticating user: {e}")
-        raise HTTPException(
-            status_code=401,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise credentials_exception
 
 
 logger = logging.getLogger(__name__)
@@ -83,11 +97,55 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
+# Authentication endpoints
+@app.post("/api/v1/auth/register")
+async def register(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    try:
+        # Check if user exists
+        user = db.query(Account).filter(Account.username == form_data.username).first()
+        if user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered"
+            )
+        
+        # Create new user
+        hashed_password = pwd_context.hash(form_data.password)
+        user = Account(username=form_data.username, hashed_password=hashed_password)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        return {"message": "User created successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        raise HTTPException(status_code=500, detail="Registration failed")
+
+@app.post("/api/v1/auth/token")
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    try:
+        user = db.query(Account).filter(Account.username == form_data.username).first()
+        if not user or not pwd_context.verify(form_data.password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        access_token = create_access_token(data={"sub": user.username})
+        return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=500, detail="Login failed")
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    # Allow all origins in development
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -110,39 +168,17 @@ async def startup_event() -> None:
 async def analyze_market(market_data: MarketData) -> dict:
     try:
         logger.info(f"Received market data for analysis: {market_data.symbol}")
-        model = OllamaModel()
-        analysis_request = {
-            "symbol": market_data.symbol,
-            "price": market_data.price,
-            "volume": market_data.volume,
-            "indicators": market_data.metadata.get("indicators", {}),
-        }
-        try:
-            analysis = await model.analyze_market(analysis_request)
-        except Exception as model_err:
-            logger.error(f"Model error: {model_err}")
-            raise HTTPException(status_code=500, detail="Market analysis failed")
-
+        # Store market data
         try:
             await async_mongodb.market_snapshots.insert_one(market_data.dict())
-            await async_mongodb.technical_analysis.insert_one(
-                {
-                    "symbol": market_data.symbol,
-                    "timestamp": datetime.utcnow(),
-                    "analysis": analysis,
-                    "market_data": market_data.dict(),
-                }
-            )
         except Exception as store_err:
             logger.error(f"Storage error: {store_err}")
 
         return {
             "status": "success",
-            "data": analysis,
+            "data": {"message": "Market data stored successfully"},
             "timestamp": datetime.utcnow().isoformat(),
         }
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -217,7 +253,8 @@ async def get_account_positions(
         positions = (
             db.query(Position).filter(Position.user_id == current_user["id"]).all()
         )
-
+        position_responses = [PositionResponse(**p.__dict__) for p in positions]
+        return PositionListResponse(positions=position_responses)
     except Exception as e:
         logger.error(f"Error fetching positions: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch positions")
@@ -303,7 +340,24 @@ async def get_risk_metrics(
         positions = (
             db.query(Position).filter(Position.user_id == current_user["id"]).all()
         )
-
+        
+        # Calculate risk metrics
+        total_exposure = sum(abs(p.quantity * p.entry_price) for p in positions)
+        margin_used = sum(p.margin_required for p in positions if p.margin_required)
+        margin_ratio = margin_used / total_exposure if total_exposure > 0 else 0
+        
+        # Calculate PnL
+        today = datetime.utcnow().date()
+        daily_trades = (
+            db.query(Trade)
+            .filter(
+                Trade.user_id == current_user["id"],
+                Trade.timestamp >= today
+            )
+            .all()
+        )
+        daily_pnl = sum(t.pnl for t in daily_trades if t.pnl)
+        total_pnl = sum(t.pnl for t in daily_trades if t.pnl)
 
         # Create or update risk metrics
         risk_metrics = (
@@ -323,6 +377,11 @@ async def get_risk_metrics(
             )
             db.add(risk_metrics)
         else:
+            risk_metrics.total_exposure = total_exposure
+            risk_metrics.margin_used = margin_used
+            risk_metrics.margin_ratio = margin_ratio
+            risk_metrics.daily_pnl = daily_pnl
+            risk_metrics.total_pnl = total_pnl
 
         db.commit()
         db.refresh(risk_metrics)
