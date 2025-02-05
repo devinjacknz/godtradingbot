@@ -131,9 +131,7 @@ class Trade(Base):  # type: ignore[misc, valid-type]
             "symbol": self.symbol,
             "direction": self.direction,
             "entry_time": self.entry_time.isoformat(),
-            "exit_time": (
-                self.exit_time.isoformat() if self.exit_time else None
-            ),
+            "exit_time": (self.exit_time.isoformat() if self.exit_time else None),
             "entry_price": self.entry_price,
             "exit_price": self.exit_price,
             "quantity": self.quantity,
