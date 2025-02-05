@@ -1,15 +1,17 @@
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, status
+from fastapi import Depends, FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from pydantic_settings import BaseSettings
 from sqlalchemy.orm import Session
 
-from config import settings
+class Settings(BaseSettings):
+    HOST: str = "127.0.0.1"
+    PORT: int = 8000
+
+settings = Settings()
 from database import (
     Account,
     Agent,
@@ -63,84 +65,10 @@ from websocket import (
     handle_websocket_connection,
 )
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
-
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
-
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        return {"id": username, "username": username}
-    except JWTError as e:
-        logger.error(f"JWT validation error: {e}")
-        raise credentials_exception
-    except Exception as e:
-        logger.error(f"Error authenticating user: {e}")
-        raise credentials_exception
-
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
-
-# Authentication endpoints
-@app.post("/api/v1/auth/register")
-async def register(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    try:
-        # Check if user exists
-        user = db.query(Account).filter(Account.username == form_data.username).first()
-        if user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already registered"
-            )
-        
-        # Create new user
-        hashed_password = pwd_context.hash(form_data.password)
-        user = Account(username=form_data.username, hashed_password=hashed_password)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        
-        return {"message": "User created successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Registration error: {e}")
-        raise HTTPException(status_code=500, detail="Registration failed")
-
-@app.post("/api/v1/auth/token")
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    try:
-        user = db.query(Account).filter(Account.username == form_data.username).first()
-        if not user or not pwd_context.verify(form_data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        access_token = create_access_token(data={"sub": user.username})
-        return {"access_token": access_token, "token_type": "bearer"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Login error: {e}")
-        raise HTTPException(status_code=500, detail="Login failed")
 
 # Enable CORS
 app.add_middleware(
@@ -226,15 +154,12 @@ async def websocket_analysis(websocket: WebSocket) -> None:
 
 @app.get("/api/v1/account/balance", response_model=AccountResponse)
 async def get_account_balance(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> AccountResponse:
     try:
-        account = (
-            db.query(Account).filter(Account.user_id == current_user["id"]).first()
-        )
+        account = db.query(Account).first()
         if not account:
-            account = Account(user_id=current_user["id"], balance=0.0)
+            account = Account(balance=0.0)
             db.add(account)
             db.commit()
             db.refresh(account)
@@ -246,13 +171,10 @@ async def get_account_balance(
 
 @app.get("/api/v1/account/positions", response_model=PositionListResponse)
 async def get_account_positions(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> PositionListResponse:
     try:
-        positions = (
-            db.query(Position).filter(Position.user_id == current_user["id"]).all()
-        )
+        positions = db.query(Position).all()
         position_responses = [PositionResponse(**p.__dict__) for p in positions]
         return PositionListResponse(positions=position_responses)
     except Exception as e:
@@ -273,12 +195,10 @@ async def websocket_orders(websocket: WebSocket) -> None:
 @app.post("/api/v1/orders", response_model=OrderResponse)
 async def create_order(
     order: OrderCreate,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> OrderResponse:
     try:
         order_data = order.model_dump()
-        order_data["user_id"] = current_user["id"]
         db_order = Order(**order_data)
         db.add(db_order)
         db.commit()
@@ -292,11 +212,10 @@ async def create_order(
 
 @app.get("/api/v1/orders", response_model=OrderListResponse)
 async def list_orders(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> OrderListResponse:
     try:
-        orders = db.query(Order).filter(Order.user_id == current_user["id"]).all()
+        orders = db.query(Order).all()
         order_responses = [OrderResponse(**o.__dict__) for o in orders]
         return OrderListResponse(orders=order_responses)
     except Exception as e:
@@ -307,15 +226,10 @@ async def list_orders(
 @app.get("/api/v1/orders/{order_id}", response_model=OrderResponse)
 async def get_order(
     order_id: int,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> OrderResponse:
     try:
-        order = (
-            db.query(Order)
-            .filter(Order.id == order_id, Order.user_id == current_user["id"])
-            .first()
-        )
+        order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
         return order
@@ -333,13 +247,10 @@ async def websocket_risk(websocket: WebSocket) -> None:
 
 @app.get("/api/v1/risk/metrics", response_model=RiskMetricsResponse)
 async def get_risk_metrics(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> RiskMetricsResponse:
     try:
-        positions = (
-            db.query(Position).filter(Position.user_id == current_user["id"]).all()
-        )
+        positions = db.query(Position).all()
         
         # Calculate risk metrics
         total_exposure = sum(abs(p.quantity * p.entry_price) for p in positions)
@@ -350,25 +261,17 @@ async def get_risk_metrics(
         today = datetime.utcnow().date()
         daily_trades = (
             db.query(Trade)
-            .filter(
-                Trade.user_id == current_user["id"],
-                Trade.timestamp >= today
-            )
+            .filter(Trade.timestamp >= today)
             .all()
         )
         daily_pnl = sum(t.pnl for t in daily_trades if t.pnl)
         total_pnl = sum(t.pnl for t in daily_trades if t.pnl)
 
         # Create or update risk metrics
-        risk_metrics = (
-            db.query(RiskMetrics)
-            .filter(RiskMetrics.user_id == current_user["id"])
-            .first()
-        )
+        risk_metrics = db.query(RiskMetrics).first()
 
         if not risk_metrics:
             risk_metrics = RiskMetrics(
-                user_id=current_user["id"],
                 total_exposure=total_exposure,
                 margin_used=margin_used,
                 margin_ratio=margin_ratio,
@@ -395,20 +298,13 @@ async def get_risk_metrics(
 @app.post("/api/v1/risk/limits", response_model=LimitSettingsResponse)
 async def update_limit_settings(
     settings: LimitSettingsUpdate,
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> LimitSettingsResponse:
     try:
-        limit_settings = (
-            db.query(LimitSettings)
-            .filter(LimitSettings.user_id == current_user["id"])
-            .first()
-        )
+        limit_settings = db.query(LimitSettings).first()
 
         if not limit_settings:
-            limit_settings = LimitSettings(
-                user_id=current_user["id"], **settings.model_dump()
-            )
+            limit_settings = LimitSettings(**settings.model_dump())
             db.add(limit_settings)
         else:
             for key, value in settings.model_dump().items():
@@ -425,15 +321,10 @@ async def update_limit_settings(
 
 @app.get("/api/v1/risk/limits", response_model=LimitSettingsResponse)
 async def get_limit_settings(
-    db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> LimitSettingsResponse:
     try:
-        limit_settings = (
-            db.query(LimitSettings)
-            .filter(LimitSettings.user_id == current_user["id"])
-            .first()
-        )
+        limit_settings = db.query(LimitSettings).first()
 
         if not limit_settings:
             raise HTTPException(status_code=404, detail="Limit settings not found")

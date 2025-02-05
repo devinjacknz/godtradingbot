@@ -27,11 +27,6 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000, env="PORT")
     DEBUG: bool = Field(default=False, env="DEBUG")
 
-    # JWT settings
-    JWT_SECRET: str = Field(default="your-secret-key-here", env="JWT_SECRET")
-    JWT_ALGORITHM: str = Field(default="HS256", env="JWT_ALGORITHM")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
-
     # WebSocket settings
     WS_PING_INTERVAL: int = Field(default=30000, env="WS_PING_INTERVAL")
     WS_HEARTBEAT_TIMEOUT: int = Field(default=60000, env="WS_HEARTBEAT_TIMEOUT")
