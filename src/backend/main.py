@@ -7,11 +7,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-from src.backend.config import settings
-from src.backend.database import (
+from .config import settings
+from .database import (
     Account,
     Agent,
     AgentStatus,
+    Base,
     LimitSettings,
     Order,
     Position,
@@ -21,11 +22,10 @@ from src.backend.database import (
     Trade,
     TradeStatus,
     async_mongodb,
+    engine,
     get_db,
-    init_db,
-    init_mongodb,
 )
-from src.backend.schemas import (
+from .schemas import (
     AccountResponse,
     AgentCreate,
     AgentListResponse,
@@ -38,6 +38,7 @@ from src.backend.schemas import (
     OrderResponse,
     PerformanceResponse,
     PositionListResponse,
+    PositionResponse,
     RiskMetricsResponse,
     SignalCreate,
     SignalListResponse,
@@ -49,8 +50,7 @@ from src.backend.schemas import (
     TradeListResponse,
     TradeResponse,
 )
-from src.backend.shared.models.ollama import OllamaModel
-from src.backend.websocket import (
+
     broadcast_limit_update,
     broadcast_order_update,
     broadcast_performance_update,
@@ -97,8 +97,12 @@ app.add_middleware(
 # Initialize databases
 @app.on_event("startup")
 async def startup_event() -> None:
-    init_db()  # Initialize PostgreSQL
-    init_mongodb()  # Initialize MongoDB collections
+    try:
+        Base.metadata.create_all(bind=engine)  # Initialize SQLite tables
+    except Exception as e:
+        logger.error(f"Database initialization error: {e}")
+        # Continue even if database init fails
+        pass
 
 
 # Market Analysis endpoint
@@ -213,13 +217,7 @@ async def get_account_positions(
         positions = (
             db.query(Position).filter(Position.user_id == current_user["id"]).all()
         )
-        positions_data = PositionListResponse(positions=positions)
 
-        # Broadcast position updates via WebSocket
-        for position in positions:
-            await broadcast_position_update(position.model_dump())
-
-        return positions_data
     except Exception as e:
         logger.error(f"Error fetching positions: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch positions")
@@ -262,7 +260,8 @@ async def list_orders(
 ) -> OrderListResponse:
     try:
         orders = db.query(Order).filter(Order.user_id == current_user["id"]).all()
-        return OrderListResponse(orders=orders)
+        order_responses = [OrderResponse(**o.__dict__) for o in orders]
+        return OrderListResponse(orders=order_responses)
     except Exception as e:
         logger.error(f"Error listing orders: {e}")
         raise HTTPException(status_code=500, detail="Failed to list orders")
@@ -305,12 +304,6 @@ async def get_risk_metrics(
             db.query(Position).filter(Position.user_id == current_user["id"]).all()
         )
 
-        # Calculate risk metrics
-        total_exposure = sum(abs(p.size * p.current_price) for p in positions)
-        margin_used = total_exposure * 0.1  # Example: 10% margin requirement
-        margin_ratio = margin_used / total_exposure if total_exposure > 0 else 0
-        daily_pnl = sum(p.unrealized_pnl for p in positions)
-        total_pnl = daily_pnl  # For simplicity, using same value
 
         # Create or update risk metrics
         risk_metrics = (
@@ -330,11 +323,6 @@ async def get_risk_metrics(
             )
             db.add(risk_metrics)
         else:
-            risk_metrics.total_exposure = total_exposure
-            risk_metrics.margin_used = margin_used
-            risk_metrics.margin_ratio = margin_ratio
-            risk_metrics.daily_pnl = daily_pnl
-            risk_metrics.total_pnl = total_pnl
 
         db.commit()
         db.refresh(risk_metrics)
@@ -404,7 +392,8 @@ async def get_limit_settings(
 async def get_strategies(db: Session = Depends(get_db)) -> StrategyListResponse:
     try:
         strategies = db.query(Strategy).all()
-        return StrategyListResponse(strategies=strategies)
+        strategy_responses = [StrategyResponse(**s.__dict__) for s in strategies]
+        return StrategyListResponse(strategies=strategy_responses)
     except Exception as e:
         logger.error(f"Error fetching strategies: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch strategies")
@@ -511,11 +500,12 @@ async def start_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentRe
             agent = Agent(type=agent_type)
             db.add(agent)
 
-        if agent.status == AgentStatus.RUNNING:
+        if str(agent.status) == str(AgentStatus.RUNNING):
             return agent
 
-        agent.status = AgentStatus.RUNNING
-        agent.last_updated = datetime.utcnow()
+        db.query(Agent).filter(Agent.id == agent.id).update(
+            {"status": AgentStatus.RUNNING}
+        )
         try:
             db.commit()
             db.refresh(agent)
@@ -542,11 +532,12 @@ async def stop_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentRes
         if not agent:
             raise HTTPException(status_code=404, detail=f"Agent {agent_type} not found")
 
-        if agent.status == AgentStatus.STOPPED:
+        if str(agent.status) == str(AgentStatus.STOPPED):
             return agent
 
-        agent.status = AgentStatus.STOPPED
-        agent.last_updated = datetime.utcnow()
+        db.query(Agent).filter(Agent.id == agent.id).update(
+            {"status": AgentStatus.STOPPED}
+        )
         try:
             db.commit()
             db.refresh(agent)
@@ -628,7 +619,13 @@ async def delete_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentR
 async def get_trades(db: Session = Depends(get_db)) -> TradeListResponse:
     try:
         trades = db.query(Trade).all()
-        return TradeListResponse(trades=trades)
+        trade_responses = [
+            TradeResponse(
+                **{k: v for k, v in t.__dict__.items() if not k.startswith("_")}
+            )
+            for t in trades
+        ]
+        return TradeListResponse(trades=trade_responses)
     except Exception as e:
         logger.error(f"Error fetching trades: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch trades")
@@ -666,7 +663,13 @@ async def create_trade(
 async def get_signals(db: Session = Depends(get_db)) -> SignalListResponse:
     try:
         signals = db.query(Signal).all()
-        return SignalListResponse(signals=signals)
+        signal_responses = [
+            SignalResponse(
+                **{k: v for k, v in s.__dict__.items() if not k.startswith("_")}
+            )
+            for s in signals
+        ]
+        return SignalListResponse(signals=signal_responses)
     except Exception as e:
         logger.error(f"Error fetching signals: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch signals")
@@ -717,7 +720,7 @@ async def get_performance(db: Session = Depends(get_db)) -> PerformanceResponse:
             await broadcast_performance_update(performance_data)
             return PerformanceResponse(**performance_data)
 
-        closed_trades = [t for t in trades if t.status == TradeStatus.CLOSED]
+        closed_trades = [t for t in trades if str(t.status) == str(TradeStatus.CLOSED)]
         closed_count = len(closed_trades)
         if closed_count == 0:
             performance_data = {
@@ -737,15 +740,22 @@ async def get_performance(db: Session = Depends(get_db)) -> PerformanceResponse:
 
         for trade in closed_trades:
             try:
+                exit_price = float(getattr(trade, "exit_price", 0))
+                entry_price = float(getattr(trade, "entry_price", 0))
+                direction = str(getattr(trade, "direction", ""))
+                quantity = float(getattr(trade, "quantity", 0))
+
                 profit = (
-                    (trade.exit_price - trade.entry_price)
-                    if trade.direction == "long"
-                    else (trade.entry_price - trade.exit_price)
-                ) * trade.quantity
-                if profit > 0:
+                    (exit_price - entry_price)
+                    if direction == "long"
+                    else (entry_price - exit_price)
+                ) * quantity
+
+                profit_value = float(profit)
+                if profit_value > 0:
                     profitable_trades += 1
-                total_profit += profit
-                profits.append(profit)
+                total_profit += profit_value
+                profits.append(profit_value)
             except (TypeError, AttributeError) as e:
                 logger.error(f"Error calculating profit for trade {trade.id}: {e}")
                 continue
@@ -763,10 +773,10 @@ async def get_performance(db: Session = Depends(get_db)) -> PerformanceResponse:
         performance_data = {
             "total_trades": total_trades,
             "profitable_trades": profitable_trades,
-            "total_profit": round(total_profit, 8),
-            "win_rate": round(win_rate, 4),
-            "average_profit": round(average_profit, 8),
-            "max_drawdown": round(max_drawdown, 8),
+            "total_profit": float(f"{total_profit:.8f}"),
+            "win_rate": float(f"{win_rate:.4f}"),
+            "average_profit": float(f"{average_profit:.8f}"),
+            "max_drawdown": float(f"{max_drawdown:.8f}"),
         }
 
         await broadcast_performance_update(performance_data)

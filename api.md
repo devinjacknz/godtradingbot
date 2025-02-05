@@ -1,7 +1,20 @@
 # Backend API Documentation
 
-## Market Data
+## Base URL
+Local Development: `http://127.0.0.1:8000`
 
+## System Health
+### GET /api/v1/health ✓
+Status: Verified Working
+- No authentication required
+- Returns system health status and database connectivity
+
+## Authentication
+All endpoints except health check require Bearer token authentication.
+- Token URL: /token
+- Header: Authorization: Bearer {token}
+
+## Market Data
 ### GET /v1/price/{dex}/{symbol}
 Get current price from a specific DEX.
 - Parameters:
@@ -9,95 +22,113 @@ Get current price from a specific DEX.
   - symbol: Trading pair symbol
 - Response: Current price and volume data
 
-## Agent Management
+```
 
-### POST /api/v1/agents
-Creates a new trading agent.
+## Account Management
+### GET /api/v1/account/balance
+- Requires authentication
+- Returns account balance and status
+
+### GET /api/v1/account/positions
+- Requires authentication
+- Returns current positions
+
+## Trading Operations
+### GET /api/v1/orders
+- Requires authentication
+- Returns list of orders
+
+### POST /api/v1/orders
+- Requires authentication
+- Creates new order
 - Request body:
-  ```json
-  {
-      "type": "string",  // Required: Type of agent to create
-      "status": "string" // Optional: Initial agent status (default: STOPPED)
-  }
-  ```
-- Response: AgentResponse object with type, status, and last_updated timestamp
-- Error codes:
-  - 400: Agent type is required
-  - 409: Agent already exists
-  - 500: Failed to create agent
-
-### DELETE /api/v1/agents/{agent_type}
-Deletes an existing agent. If running, stops before deletion.
-- Parameters:
-  - agent_type: Type of agent to delete
-- Response: AgentResponse object of deleted agent
-- Error codes:
-  - 400: Agent type is required
-  - 404: Agent not found
-  - 500: Failed to delete agent
-
-### PATCH /api/v1/agents/{agent_type}/status
-Updates the status of an existing agent.
-- Parameters:
-  - agent_type: Type of agent to update
-- Request body:
-  ```json
-  {
-      "status": "string" // Required: New agent status (RUNNING/STOPPED)
-  }
-  ```
-- Response: AgentResponse object with updated status
-- Error codes:
-  - 400: Agent type is required
-  - 404: Agent not found
-  - 500: Failed to update status
-
-### GET /api/v1/agents/{agent_type}/status
-Gets current agent status. Creates new stopped agent if not exists.
-- Parameters:
-  - agent_type: Type of agent to query
-- Response: AgentResponse object with current status
-- Error codes:
-  - 400: Agent type is required
-  - 500: Failed to get status
-
-### POST /api/v1/agents/{agent_type}/start
-Starts an agent. Creates new one if not exists.
-- Parameters:
-  - agent_type: Type of agent to start
-- Response: AgentResponse object with RUNNING status
-- Error codes:
-  - 400: Agent type is required
-  - 500: Failed to start agent
-
-### POST /api/v1/agents/{agent_type}/stop
-Stops a running agent.
-- Parameters:
-  - agent_type: Type of agent to stop
-- Response: AgentResponse object with STOPPED status
-- Error codes:
-  - 400: Agent type is required
-  - 404: Agent not found
-  - 500: Failed to stop agent
-
-## Models
-
-### AgentResponse
 ```json
 {
-    "type": "string",     // Type of agent
-    "status": "string",   // RUNNING or STOPPED
-    "last_updated": "string" // ISO 8601 timestamp
+    "symbol": "string",
+    "order_type": "market|limit",
+    "direction": "buy|sell",
+    "quantity": "number",
+    "price": "number"
 }
 ```
 
-## System Health
+## Risk Management
+### GET /api/v1/risk/metrics
+- Requires authentication
+- Returns current risk metrics
 
-### GET /api/v1/health
-System health check endpoint.
-- Response: Health status with database connectivity check
+### GET /api/v1/risk/limits
+- Requires authentication
+- Returns trading limits
 
-## Authentication
-All endpoints except health check require Bearer token authentication.
-- Token URL: /token
-- Header: Authorization: Bearer {token}
+### PUT /api/v1/risk/limits
+- Requires authentication
+- Updates trading limits
+- Request body:
+```json
+{
+    "max_position_size": "number",
+    "max_daily_loss": "number",
+    "max_leverage": "number",
+    "max_trades_per_day": "number"
+}
+```
+
+## Strategy Management
+### GET /api/v1/strategies ✓
+Status: Verified Working
+- Returns list of available trading strategies
+
+### POST /api/v1/strategies
+- Requires authentication
+- Creates new trading strategy
+- Request body:
+```json
+{
+    "name": "string",
+    "type": "string",
+    "parameters": {},
+    "status": "active|inactive"
+}
+```
+
+## WebSocket Endpoints
+Base WebSocket URL: `ws://127.0.0.1:8000`
+
+- `/ws/trades` - Real-time trade updates
+- `/ws/signals` - Trading signals
+- `/ws/performance` - Performance metrics
+- `/ws/agent-status` - Agent status updates
+- `/ws/analysis` - Market analysis updates
+- `/ws/positions` - Position updates
+- `/ws/orders` - Order updates
+- `/ws/risk` - Risk metrics updates
+
+## Local Development Configuration
+Required environment variables:
+```
+DATABASE_URL=sqlite:///./tradingbot.db
+MONGODB_URL=mongodb://localhost:27017/tradingbot
+JWT_SECRET=development-secret-key
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+HOST=127.0.0.1
+PORT=8000
+DEBUG=true
+WS_PING_INTERVAL=30000
+WS_HEARTBEAT_TIMEOUT=60000
+```
+
+## Database Schema
+- SQLite database for persistent storage
+- MongoDB (optional) for market data and technical analysis
+- Tables:
+  - accounts
+  - positions
+  - orders
+  - trades
+  - signals
+  - strategies
+  - agents
+  - risk_metrics
+  - limit_settings

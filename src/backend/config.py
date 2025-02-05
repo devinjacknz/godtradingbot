@@ -10,19 +10,9 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Database settings
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "tradingbot")
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "postgres")
-    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
-    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    # Use SQLite for development
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./tradingbot.db")
     MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017/tradingbot")
-
-    @property
-    def DATABASE_URL(self) -> str:
-        return (
-            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
 
     # Server settings
     HOST: str = os.getenv("HOST", "127.0.0.1")
