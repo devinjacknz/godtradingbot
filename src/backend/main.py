@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,7 +52,6 @@ from websocket import (
     broadcast_limit_update,
     broadcast_order_update,
     broadcast_performance_update,
-    broadcast_position_update,
     broadcast_risk_update,
     broadcast_signal,
     broadcast_trade_update,
