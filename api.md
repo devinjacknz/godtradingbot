@@ -80,7 +80,6 @@ Status: Verified Working
 - Returns list of available trading strategies
 
 ### POST /api/v1/strategies
-- Requires authentication
 - Creates new trading strategy
 - Request body:
 ```json
@@ -91,6 +90,53 @@ Status: Verified Working
     "status": "active|inactive"
 }
 ```
+
+## Agent Management ✓
+Status: Verified Working
+
+### POST /api/v1/agents
+Creates a new trading agent
+- Request body:
+```json
+{
+    "type": "string"  // Type of the agent to create
+}
+```
+- Response: Created agent details with status defaulting to "stopped"
+
+### DELETE /api/v1/agents/{agent_type}
+Deletes an existing trading agent
+- Parameters:
+  - agent_type: Type of the agent to delete
+- Response: Deleted agent details
+
+### GET /api/v1/agents
+Lists all available trading agents
+- Response:
+```json
+{
+    "agents": ["string"],  // List of agent types
+    "count": "integer"     // Total number of agents
+}
+```
+
+### GET /api/v1/agents/{agent_type}/status
+Gets the current status of a specific agent
+- Parameters:
+  - agent_type: Type of the agent to check
+- Response: Agent details including status
+
+### POST /api/v1/agents/{agent_type}/start
+Starts trading for a specific agent
+- Parameters:
+  - agent_type: Type of the agent to start
+- Response: Updated agent details with status "running"
+
+### POST /api/v1/agents/{agent_type}/stop
+Stops trading for a specific agent
+- Parameters:
+  - agent_type: Type of the agent to stop
+- Response: Updated agent details with status "stopped"
 
 ## WebSocket Endpoints
 Base WebSocket URL: `ws://127.0.0.1:8000`
