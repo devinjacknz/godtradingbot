@@ -4,19 +4,9 @@ from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic_settings import BaseSettings
 from sqlalchemy.orm import Session
 
-class Settings(BaseSettings):
-    HOST: str = "127.0.0.1"
-    PORT: int = 8000
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
-
-    @property
-    def allowed_origins_list(self) -> List[str]:
-        return self.ALLOWED_ORIGINS.split(",")
-
-settings = Settings()
+from config import settings
 from database import (
     Account,
     Agent,

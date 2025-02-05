@@ -1,5 +1,3 @@
-import os
-from functools import cached_property
 from typing import List
 
 from dotenv import load_dotenv
@@ -14,7 +12,6 @@ class Settings(BaseSettings):
     # Database settings
     DATABASE_URL: str = Field(default="sqlite:///./tradingbot.db", env="DATABASE_URL")
     MONGODB_URL: str = Field(default="mongodb://localhost:27017/tradingbot", env="MONGODB_URL")
-    
     # PostgreSQL settings
     POSTGRES_DB: str = Field(default="tradingbot", env="POSTGRES_DB")
     POSTGRES_USER: str = Field(default="postgres", env="POSTGRES_USER")
