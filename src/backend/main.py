@@ -10,6 +10,11 @@ from sqlalchemy.orm import Session
 class Settings(BaseSettings):
     HOST: str = "127.0.0.1"
     PORT: int = 8000
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        return self.ALLOWED_ORIGINS.split(",")
 
 settings = Settings()
 from database import (
@@ -517,7 +522,7 @@ async def create_agent(
             msg = f"Agent with type {agent.type} already exists"
             raise HTTPException(status_code=409, detail=msg)
 
-        db_agent = Agent(type=agent.type, status=agent.status)
+        db_agent = Agent(type=agent.type, status=AgentStatus.STOPPED)
         try:
             db.add(db_agent)
             db.commit()

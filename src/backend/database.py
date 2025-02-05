@@ -189,7 +189,6 @@ class Account(Base):  # type: ignore[misc, valid-type]
     def model_dump(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "username": self.username,
             "balance": self.balance,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
