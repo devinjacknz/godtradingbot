@@ -9,26 +9,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-<<<<<<< HEAD
-# Add src/backend to Python path
-backend_dir = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-||||||| ff2171ff6
-# Add src/backend to Python path
-backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-=======
 # Add project root to Python path
 project_root = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
->>>>>>> origin/main
 
 from src.backend.database import Base, get_db  # noqa: E402
 from src.backend.main import app  # noqa: E402

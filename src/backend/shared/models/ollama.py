@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+
 class OllamaModel:
     async def analyze_market(self, analysis_request: Dict[str, Any]) -> Dict[str, Any]:
         # Minimal implementation for local development
@@ -13,5 +14,5 @@ class OllamaModel:
             "symbol": analysis_request.get("symbol", ""),
             "price": analysis_request.get("price", 0.0),
             "volume": analysis_request.get("volume", 0),
-            "indicators": analysis_request.get("indicators", {})
+            "indicators": analysis_request.get("indicators", {}),
         }

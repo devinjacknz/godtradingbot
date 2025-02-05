@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +23,6 @@ from .database import (
     async_mongodb,
     get_db,
     init_db,
-    init_mongodb,
 )
 from .schemas import (
     AccountResponse,
@@ -36,7 +35,6 @@ from .schemas import (
     OrderListResponse,
     OrderResponse,
     PerformanceResponse,
-    PositionBase,
     PositionListResponse,
     PositionResponse,
     RiskMetricsResponse,
@@ -53,7 +51,6 @@ from .schemas import (
 from .shared.models.ollama import OllamaModel
 from .websocket import (
     broadcast_agent_status,
-    broadcast_analysis,
     broadcast_limit_update,
     broadcast_order_update,
     broadcast_performance_update,
@@ -79,6 +76,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -198,10 +196,12 @@ async def websocket_analysis(websocket: WebSocket) -> None:
 @app.get("/api/v1/account/balance", response_model=AccountResponse)
 async def get_account_balance(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> AccountResponse:
     try:
-        account = db.query(Account).filter(Account.user_id == current_user["id"]).first()
+        account = (
+            db.query(Account).filter(Account.user_id == current_user["id"]).first()
+        )
         if not account:
             account = Account(user_id=current_user["id"], balance=0.0)
             db.add(account)
@@ -216,17 +216,23 @@ async def get_account_balance(
 @app.get("/api/v1/account/positions", response_model=PositionListResponse)
 async def get_account_positions(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> PositionListResponse:
     try:
-        positions = db.query(Position).filter(Position.user_id == current_user["id"]).all()
-        position_responses = [PositionResponse(**{k: v for k, v in p.__dict__.items() if not k.startswith('_')}) for p in positions]
+        positions = (
+            db.query(Position).filter(Position.user_id == current_user["id"]).all()
+        )
+        position_responses = [
+            PositionResponse(
+                **{k: v for k, v in p.__dict__.items() if not k.startswith("_")}
+            )
+            for p in positions
+        ]
         positions_data = PositionListResponse(positions=position_responses)
-        
-        # Broadcast position updates via WebSocket
+
         for position in positions:
             await broadcast_position_update(position.__dict__)
-            
+
         return positions_data
     except Exception as e:
         logger.error(f"Error fetching positions: {e}")
@@ -247,7 +253,7 @@ async def websocket_orders(websocket: WebSocket) -> None:
 async def create_order(
     order: OrderCreate,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> OrderResponse:
     try:
         order_data = order.model_dump()
@@ -266,7 +272,7 @@ async def create_order(
 @app.get("/api/v1/orders", response_model=OrderListResponse)
 async def list_orders(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> OrderListResponse:
     try:
         orders = db.query(Order).filter(Order.user_id == current_user["id"]).all()
@@ -281,13 +287,14 @@ async def list_orders(
 async def get_order(
     order_id: int,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> OrderResponse:
     try:
-        order = db.query(Order).filter(
-            Order.id == order_id,
-            Order.user_id == current_user["id"]
-        ).first()
+        order = (
+            db.query(Order)
+            .filter(Order.id == order_id, Order.user_id == current_user["id"])
+            .first()
+        )
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
         return order
@@ -306,25 +313,32 @@ async def websocket_risk(websocket: WebSocket) -> None:
 @app.get("/api/v1/risk/metrics", response_model=RiskMetricsResponse)
 async def get_risk_metrics(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> RiskMetricsResponse:
     try:
-        positions = db.query(Position).filter(
-            Position.user_id == current_user["id"]
-        ).all()
-        
+        positions = (
+            db.query(Position).filter(Position.user_id == current_user["id"]).all()
+        )
+
         # Calculate risk metrics
-        total_exposure = sum(float(getattr(p, 'size', 0)) * float(getattr(p, 'current_price', 0)) for p in positions)
+        total_exposure = sum(
+            float(getattr(p, "size", 0)) * float(getattr(p, "current_price", 0))
+            for p in positions
+        )
         margin_used = float(total_exposure) * 0.1  # Example: 10% margin requirement
-        margin_ratio = float(margin_used) / float(total_exposure) if total_exposure > 0 else 0.0
-        daily_pnl = sum(float(getattr(p, 'unrealized_pnl', 0)) for p in positions)
+        margin_ratio = (
+            float(margin_used) / float(total_exposure) if total_exposure > 0 else 0.0
+        )
+        daily_pnl = sum(float(getattr(p, "unrealized_pnl", 0)) for p in positions)
         total_pnl = float(daily_pnl)  # For simplicity, using same value
-        
+
         # Create or update risk metrics
-        risk_metrics = db.query(RiskMetrics).filter(
-            RiskMetrics.user_id == current_user["id"]
-        ).first()
-        
+        risk_metrics = (
+            db.query(RiskMetrics)
+            .filter(RiskMetrics.user_id == current_user["id"])
+            .first()
+        )
+
         if not risk_metrics:
             risk_metrics = RiskMetrics(
                 user_id=current_user["id"],
@@ -332,19 +346,19 @@ async def get_risk_metrics(
                 margin_used=margin_used,
                 margin_ratio=margin_ratio,
                 daily_pnl=daily_pnl,
-                total_pnl=total_pnl
+                total_pnl=total_pnl,
             )
             db.add(risk_metrics)
         else:
             for attr, value in {
-                'total_exposure': total_exposure,
-                'margin_used': margin_used,
-                'margin_ratio': margin_ratio,
-                'daily_pnl': daily_pnl,
-                'total_pnl': total_pnl
+                "total_exposure": total_exposure,
+                "margin_used": margin_used,
+                "margin_ratio": margin_ratio,
+                "daily_pnl": daily_pnl,
+                "total_pnl": total_pnl,
             }.items():
                 setattr(risk_metrics, attr, value)
-        
+
         db.commit()
         db.refresh(risk_metrics)
         await broadcast_risk_update(risk_metrics.model_dump())
@@ -358,23 +372,24 @@ async def get_risk_metrics(
 async def update_limit_settings(
     settings: LimitSettingsUpdate,
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LimitSettingsResponse:
     try:
-        limit_settings = db.query(LimitSettings).filter(
-            LimitSettings.user_id == current_user["id"]
-        ).first()
-        
+        limit_settings = (
+            db.query(LimitSettings)
+            .filter(LimitSettings.user_id == current_user["id"])
+            .first()
+        )
+
         if not limit_settings:
             limit_settings = LimitSettings(
-                user_id=current_user["id"],
-                **settings.model_dump()
+                user_id=current_user["id"], **settings.model_dump()
             )
             db.add(limit_settings)
         else:
             for key, value in settings.model_dump().items():
                 setattr(limit_settings, key, value)
-        
+
         db.commit()
         db.refresh(limit_settings)
         await broadcast_limit_update(limit_settings.model_dump())
@@ -387,16 +402,18 @@ async def update_limit_settings(
 @app.get("/api/v1/risk/limits", response_model=LimitSettingsResponse)
 async def get_limit_settings(
     db: Session = Depends(get_db),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LimitSettingsResponse:
     try:
-        limit_settings = db.query(LimitSettings).filter(
-            LimitSettings.user_id == current_user["id"]
-        ).first()
-        
+        limit_settings = (
+            db.query(LimitSettings)
+            .filter(LimitSettings.user_id == current_user["id"])
+            .first()
+        )
+
         if not limit_settings:
             raise HTTPException(status_code=404, detail="Limit settings not found")
-            
+
         return limit_settings
     except HTTPException:
         raise
@@ -548,7 +565,12 @@ async def stop_agent(agent_type: str, db: Session = Depends(get_db)) -> AgentRes
 async def get_trades(db: Session = Depends(get_db)) -> TradeListResponse:
     try:
         trades = db.query(Trade).all()
-        trade_responses = [TradeResponse(**{k: v for k, v in t.__dict__.items() if not k.startswith('_')}) for t in trades]
+        trade_responses = [
+            TradeResponse(
+                **{k: v for k, v in t.__dict__.items() if not k.startswith("_")}
+            )
+            for t in trades
+        ]
         return TradeListResponse(trades=trade_responses)
     except Exception as e:
         logger.error(f"Error fetching trades: {e}")
@@ -587,7 +609,12 @@ async def create_trade(
 async def get_signals(db: Session = Depends(get_db)) -> SignalListResponse:
     try:
         signals = db.query(Signal).all()
-        signal_responses = [SignalResponse(**{k: v for k, v in s.__dict__.items() if not k.startswith('_')}) for s in signals]
+        signal_responses = [
+            SignalResponse(
+                **{k: v for k, v in s.__dict__.items() if not k.startswith("_")}
+            )
+            for s in signals
+        ]
         return SignalListResponse(signals=signal_responses)
     except Exception as e:
         logger.error(f"Error fetching signals: {e}")
@@ -659,17 +686,17 @@ async def get_performance(db: Session = Depends(get_db)) -> PerformanceResponse:
 
         for trade in closed_trades:
             try:
-                exit_price = float(getattr(trade, 'exit_price', 0))
-                entry_price = float(getattr(trade, 'entry_price', 0))
-                direction = str(getattr(trade, 'direction', ''))
-                quantity = float(getattr(trade, 'quantity', 0))
-                
+                exit_price = float(getattr(trade, "exit_price", 0))
+                entry_price = float(getattr(trade, "entry_price", 0))
+                direction = str(getattr(trade, "direction", ""))
+                quantity = float(getattr(trade, "quantity", 0))
+
                 profit = (
                     (exit_price - entry_price)
                     if direction == "long"
                     else (entry_price - exit_price)
                 ) * quantity
-                
+
                 profit_value = float(profit)
                 if profit_value > 0:
                     profitable_trades += 1
@@ -705,9 +732,6 @@ async def get_performance(db: Session = Depends(get_db)) -> PerformanceResponse:
         raise HTTPException(
             status_code=500, detail="Failed to calculate performance metrics"
         )
-
-
-
 
 
 if __name__ == "__main__":
