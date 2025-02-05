@@ -12,8 +12,8 @@ import (
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/trading"
-	"github.com/devinjacknz/tradingbot/internal/market"
+	"github.com/kwanRoshi/B/go-migration/internal/trading"
+	"github.com/kwanRoshi/B/go-migration/internal/market"
 )
 
 type Config struct {

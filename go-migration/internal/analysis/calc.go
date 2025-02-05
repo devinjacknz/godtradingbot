@@ -1,6 +1,6 @@
 package analysis
 
-import "github.com/devinjacknz/tradingbot/internal/types"
+import "github.com/kwanRoshi/B/go-migration/internal/types"
 
 // SMA calculates Simple Moving Average
 func SMA(history *types.PriceHistory, period int) float64 {

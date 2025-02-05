@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/types"
+	"github.com/kwanRoshi/B/go-migration/internal/types"
 )
 
 // Limits defines risk management limits

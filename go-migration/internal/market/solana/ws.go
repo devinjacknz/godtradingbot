@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/types"
+	"github.com/kwanRoshi/B/go-migration/internal/types"
 )
 
 // WSClient handles WebSocket connections for real-time price updates

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/devinjacknz/tradingbot/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
 )
 
 // Config represents backtest configuration

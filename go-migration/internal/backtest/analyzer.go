@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
 )
 
 // SignalAnalyzer analyzes trading signals

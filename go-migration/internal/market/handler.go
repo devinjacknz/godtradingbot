@@ -7,13 +7,13 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/types"
+	"github.com/kwanRoshi/B/go-migration/internal/types"
 )
 
 // Handler manages market data subscriptions and updates
 type Handler struct {
 	logger    *zap.Logger
-	provider  types.MarketDataProvider
+	providers []types.MarketDataProvider
 	updates   chan *types.PriceUpdate
 	subs      map[string][]chan *types.PriceUpdate
 	mu        sync.RWMutex
@@ -28,16 +28,16 @@ type Config struct {
 }
 
 // NewHandler creates a new market data handler
-func NewHandler(provider types.MarketDataProvider, logger *zap.Logger) *Handler {
+func NewHandler(providers []types.MarketDataProvider, logger *zap.Logger) *Handler {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Handler{
-		logger:   logger,
-		provider: provider,
-		updates:  make(chan *types.PriceUpdate, 1000),
-		subs:     make(map[string][]chan *types.PriceUpdate),
-		ctx:      ctx,
-		cancel:   cancel,
+		logger:    logger,
+		providers: providers,
+		updates:   make(chan *types.PriceUpdate, 1000),
+		subs:      make(map[string][]chan *types.PriceUpdate),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -56,17 +56,54 @@ func (h *Handler) Stop() {
 
 // SubscribePrices subscribes to price updates for multiple symbols
 func (h *Handler) SubscribePrices(ctx context.Context, symbols []string) (<-chan *types.PriceUpdate, error) {
-	return h.provider.SubscribePrices(ctx, symbols)
+	updates := make(chan *types.PriceUpdate, len(symbols)*len(h.providers))
+	
+	for _, provider := range h.providers {
+		providerUpdates, err := provider.SubscribePrices(ctx, symbols)
+		if err != nil {
+			h.logger.Error("Failed to subscribe to provider",
+				zap.Error(err))
+			continue
+		}
+		
+		go func(p types.MarketDataProvider, updates chan<- *types.PriceUpdate) {
+			for update := range providerUpdates {
+				select {
+				case updates <- update:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(provider, updates)
+	}
+	
+	return updates, nil
 }
 
 // GetPrice gets the current price for a symbol
 func (h *Handler) GetPrice(ctx context.Context, symbol string) (float64, error) {
-	return h.provider.GetPrice(ctx, symbol)
+	for _, provider := range h.providers {
+		price, err := provider.GetPrice(ctx, symbol)
+		if err == nil {
+			return price, nil
+		}
+		h.logger.Debug("Provider failed to get price",
+			zap.Error(err))
+	}
+	return 0, fmt.Errorf("no provider available for symbol %s", symbol)
 }
 
 // GetHistoricalPrices gets historical prices for a symbol
 func (h *Handler) GetHistoricalPrices(ctx context.Context, symbol string, interval string, limit int) ([]types.PriceUpdate, error) {
-	return h.provider.GetHistoricalPrices(ctx, symbol, interval, limit)
+	for _, provider := range h.providers {
+		prices, err := provider.GetHistoricalPrices(ctx, symbol, interval, limit)
+		if err == nil {
+			return prices, nil
+		}
+		h.logger.Debug("Provider failed to get historical prices",
+			zap.Error(err))
+	}
+	return nil, fmt.Errorf("no provider available for symbol %s historical data", symbol)
 }
 
 // Internal methods

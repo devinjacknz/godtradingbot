@@ -10,7 +10,7 @@ import (
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/backtest"
+	"github.com/kwanRoshi/B/go-migration/internal/backtest"
 )
 
 func main() {

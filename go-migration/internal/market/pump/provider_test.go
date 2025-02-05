@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/market"
+	"github.com/kwanRoshi/B/go-migration/internal/market"
 )
 
 func TestPumpProvider(t *testing.T) {

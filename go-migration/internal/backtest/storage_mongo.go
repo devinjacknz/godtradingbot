@@ -10,7 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
 )
 
 // MongoStorage implements Storage interface using MongoDB

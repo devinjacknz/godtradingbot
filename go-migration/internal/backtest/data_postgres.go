@@ -9,7 +9,7 @@ import (
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
 )
 
 // PostgresConfig represents PostgreSQL configuration

@@ -9,8 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/pricing"
-	"github.com/devinjacknz/tradingbot/internal/types"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/types"
 )
 
 // Engine manages backtesting process

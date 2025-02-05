@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package trading;
+
+option go_package = "github.com/kwanRoshi/B/go-migration/proto";
+
+service TradingService {
+  rpc PlaceOrder(Order) returns (OrderResponse);
+  rpc CancelOrder(CancelOrderRequest) returns (OrderResponse);
+  rpc GetOrder(GetOrderRequest) returns (Order);
+  rpc GetOrders(GetOrdersRequest) returns (OrderList);
+  rpc ExecuteTrade(Trade) returns (TradeResponse);
+  rpc GetPosition(GetPositionRequest) returns (Position);
+  rpc GetPositions(GetPositionsRequest) returns (PositionList);
+  rpc SubscribeOrderBook(SubscribeOrderBookRequest) returns (stream OrderBook);
+}
+
+message Order {
+  string id = 1;
+  string user_id = 2;
+  string symbol = 3;
+  string side = 4;
+  string type = 5;
+  double price = 6;
+  double size = 7;
+  string status = 8;
+  int64 created_at = 9;
+  int64 updated_at = 10;
+}
+
+message OrderResponse {
+  string order_id = 1;
+  string status = 2;
+  string message = 3;
+}
+
+message CancelOrderRequest {
+  string order_id = 1;
+}
+
+message GetOrderRequest {
+  string order_id = 1;
+}
+
+message GetOrdersRequest {
+  string user_id = 1;
+}
+
+message OrderList {
+  repeated Order orders = 1;
+}
+
+message Trade {
+  string id = 1;
+  string order_id = 2;
+  string symbol = 3;
+  double price = 4;
+  double size = 5;
+  string side = 6;
+  int64 timestamp = 7;
+}
+
+message TradeResponse {
+  string trade_id = 1;
+  string status = 2;
+  string message = 3;
+}
+
+message Position {
+  string symbol = 1;
+  double size = 2;
+  double entry_price = 3;
+  double current_price = 4;
+  double unrealized_pnl = 5;
+  double realized_pnl = 6;
+}
+
+message GetPositionRequest {
+  string user_id = 1;
+  string symbol = 2;
+}
+
+message GetPositionsRequest {
+  string user_id = 1;
+}
+
+message PositionList {
+  repeated Position positions = 1;
+}
+
+message OrderBook {
+  string symbol = 1;
+  repeated PriceLevel bids = 2;
+  repeated PriceLevel asks = 3;
+  int64 timestamp = 4;
+}
+
+message PriceLevel {
+  double price = 1;
+  double size = 2;
+}
+
+message SubscribeOrderBookRequest {
+  string symbol = 1;
+}

@@ -8,8 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/analysis"
-	"github.com/devinjacknz/tradingbot/internal/types"
+	"github.com/kwanRoshi/B/go-migration/internal/analysis"
+	"github.com/kwanRoshi/B/go-migration/internal/types"
 )
 
 // Config represents pricing engine configuration

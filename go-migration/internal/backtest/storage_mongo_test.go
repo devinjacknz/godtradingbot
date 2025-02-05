@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/backtest/testutil"
-	"github.com/devinjacknz/tradingbot/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/backtest/testutil"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
 )
 
 func setupTestStorage(t *testing.T) (*MongoStorage, func()) {

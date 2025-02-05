@@ -14,10 +14,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/backtest"
-	"github.com/devinjacknz/tradingbot/internal/market"
-	"github.com/devinjacknz/tradingbot/internal/market/solana"
-	"github.com/devinjacknz/tradingbot/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/backtest"
+	"github.com/kwanRoshi/B/go-migration/internal/market"
+	"github.com/kwanRoshi/B/go-migration/internal/market/solana"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
 )
 
 func main() {

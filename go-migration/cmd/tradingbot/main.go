@@ -14,13 +14,15 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/market"
-	"github.com/devinjacknz/tradingbot/internal/market/solana"
-	"github.com/devinjacknz/tradingbot/internal/types"
-	"github.com/devinjacknz/tradingbot/internal/pricing"
-	"github.com/devinjacknz/tradingbot/internal/storage/mongodb"
-	"github.com/devinjacknz/tradingbot/internal/trading"
-	"github.com/devinjacknz/tradingbot/internal/ws"
+	"github.com/kwanRoshi/B/go-migration/internal/market"
+	"github.com/kwanRoshi/B/go-migration/internal/market/pump"
+	"github.com/kwanRoshi/B/go-migration/internal/market/solana"
+	"github.com/kwanRoshi/B/go-migration/internal/types"
+	"github.com/kwanRoshi/B/go-migration/internal/pricing"
+	"github.com/kwanRoshi/B/go-migration/internal/storage/mongodb"
+	"github.com/kwanRoshi/B/go-migration/internal/trading"
+	"github.com/kwanRoshi/B/go-migration/internal/trading/grpc"
+	"github.com/kwanRoshi/B/go-migration/internal/ws"
 )
 
 func main() {
@@ -60,7 +62,7 @@ func main() {
 	database := viper.GetString("database.mongodb.database")
 	storage := mongodb.NewTradingStorage(mongoClient, database, logger)
 
-	// Initialize Solana provider as main provider
+	// Initialize Solana provider
 	solanaConfig := solana.Config{
 		BaseURL:      viper.GetString("market.providers.solana.base_url"),
 		WebSocketURL: viper.GetString("market.providers.solana.ws_url"),
@@ -69,8 +71,16 @@ func main() {
 	}
 	solanaProvider := solana.NewProvider(solanaConfig, logger)
 
-	// Initialize market data handler with Solana provider as main provider
-	marketHandler := market.NewHandler(solanaProvider, logger)
+	// Initialize pump.fun provider
+	pumpConfig := pump.Config{
+		BaseURL:      viper.GetString("market.providers.pump.base_url"),
+		WebSocketURL: viper.GetString("market.providers.pump.ws_url"),
+		TimeoutSec:   int(viper.GetDuration("market.providers.pump.timeout").Seconds()),
+	}
+	pumpProvider := pump.NewProvider(pumpConfig, logger)
+
+	// Initialize market data handler with both providers
+	marketHandler := market.NewHandler([]market.Provider{solanaProvider, pumpProvider}, logger)
 
 	// Initialize pricing engine
 	pricingConfig := pricing.Config{
@@ -85,7 +95,9 @@ func main() {
 	pricingEngine := pricing.NewEngine(pricingConfig, logger)
 
 	// Subscribe to symbols
-	symbols := []string{"SOL/USDC", "BONK/SOL"} // Example Solana symbols
+	symbols := []string{"SOL/USDC", "BONK/SOL"} // Solana symbols
+	pumpSymbols := []string{"PUMP/SOL"} // pump.fun symbols
+	symbols = append(symbols, pumpSymbols...)
 	for _, symbol := range symbols {
 		ctx := context.Background()
 		updates, err := marketHandler.SubscribePrices(ctx, []string{symbol})
@@ -126,6 +138,12 @@ func main() {
 
 	// Start WebSocket server
 	go wsServer.Start()
+
+	// Initialize and start gRPC server
+	grpcServer := grpc.NewServer(tradingService, logger)
+	if err := grpcServer.Start(viper.GetInt("server.grpc.port")); err != nil {
+		logger.Fatal("Failed to start gRPC server", zap.Error(err))
+	}
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)

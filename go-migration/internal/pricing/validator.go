@@ -3,8 +3,8 @@ package pricing
 import (
 	"time"
 
-	"github.com/devinjacknz/tradingbot/internal/types"
-	"github.com/devinjacknz/tradingbot/internal/utils"
+	"github.com/kwanRoshi/B/go-migration/internal/types"
+	"github.com/kwanRoshi/B/go-migration/internal/utils"
 )
 
 // ValidationRule represents a signal validation rule

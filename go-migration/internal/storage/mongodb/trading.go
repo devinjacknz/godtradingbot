@@ -6,7 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/zap"
 
-	"github.com/devinjacknz/tradingbot/internal/trading"
+	"github.com/kwanRoshi/B/go-migration/internal/trading"
 )
 
 // TradingStorage implements trading.Storage interface
